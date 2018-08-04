@@ -18,12 +18,12 @@ This is unusable / under development.
 
 Use pip to install in "editable" mode:
 
-  pip install --editable .
+    pip install --editable .
 
 Run the tests with pytest:
 
-  pip install -r requirements.txt
-  pytest
+    pip install -r requirements.txt
+    pytest
 
 ## Benchmarks
 
