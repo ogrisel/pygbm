@@ -9,17 +9,10 @@ HISTOGRAM_DTYPE = np.dtype([
 ])
 
 
+@njit(fastmath=True)
 def build_histogram(n_bins, sample_indices, binned_feature,
                     ordered_gradients, ordered_hessians):
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
-    _build_histogram(histogram, sample_indices, binned_feature,
-                     ordered_gradients, ordered_hessians)
-    return histogram
-
-
-@njit(fastmath=True)
-def _build_histogram(histogram, sample_indices, binned_feature,
-                     ordered_gradients, ordered_hessians):
     for i, sample_idx in enumerate(sample_indices):
         bin_idx = binned_feature[sample_idx]
         histogram[bin_idx].count += 1
