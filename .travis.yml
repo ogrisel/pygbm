@@ -1,0 +1,20 @@
+language: python
+# make it explicit that we favor the new container-based travis workers
+sudo: false
+
+env:
+  global:
+    - PYTHON="python"
+    - OMP_NUM_THREADS=4
+matrix:
+  include:
+    - python: "3.6"
+      env: TOXENV="py36"
+    - python: "3.7-dev"
+      env: TOXENV="py37"
+
+install: $PYTHON -m pip install tox
+script: tox
+after_success:
+  - $PYTHON -m pip install codecov
+  - codecov

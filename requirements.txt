@@ -1,0 +1,6 @@
+numba
+numpy
+scipy
+scikit-learn
+pytest  # for the tests
+joblib  # for the benchmark scripts
