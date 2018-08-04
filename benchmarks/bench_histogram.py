@@ -1,7 +1,7 @@
 from time import time
 import numpy as np
 from joblib import Memory
-from pygbm.histogram import build_histogram
+from pygbm.histogram import build_histogram, build_histogram_unrolled
 
 m = Memory(location='/tmp')
 
@@ -28,9 +28,11 @@ sample_indices, binned_feature, gradients, hessians = make_data(
 
 n_subsamples = sample_indices.shape[0]
 n_samples = binned_feature.shape[0]
-print(f"Building feature histogram on {n_subsamples} values of {n_samples}")
-tic = time()
-build_histogram(256, sample_indices, binned_feature, gradients, hessians)
-toc = time()
-duration = toc - tic
-print(f"Built in {duration:.3f}s")
+
+for func in [build_histogram, build_histogram_unrolled]:
+    print(f"{func.__name__} on {n_subsamples:.0e} values of {n_samples:.0e}")
+    tic = time()
+    func(256, sample_indices, binned_feature, gradients, hessians)
+    toc = time()
+    duration = toc - tic
+    print(f"Built in {duration:.3f}s")
