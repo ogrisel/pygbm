@@ -12,6 +12,7 @@ def test_build_histogram(build_func):
         [0, 2, 0, 1, 2, 0, 2, 1],
         dtype=np.uint8)
 
+    # Small sample_indices (below unrolling threshold)
     ordered_gradients = np.array([0, 1, 3], dtype=np.float32)
     ordered_hessians = np.array([1, 1, 2], dtype=np.float32)
 
@@ -22,6 +23,7 @@ def test_build_histogram(build_func):
     assert_allclose(hist['sum_gradients'], [1, 3, 0])
     assert_allclose(hist['sum_hessians'], [2, 2, 0])
 
+    # Larger sample_indices (above unrolling threshold)
     sample_indices = np.array([0, 2, 3, 6, 7], dtype=np.uint32)
     ordered_gradients = np.array([0, 1, 3, 0, 1], dtype=np.float32)
     ordered_hessians = np.array([1, 1, 2, 1, 0], dtype=np.float32)
