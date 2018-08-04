@@ -13,6 +13,6 @@ def test_build_histogram():
     ordered_hessians = np.array([1, 1, 2], dtype=np.float32)
     hist = build_histogram(3, sample_indices, binned_features,
                            ordered_gradients, ordered_hessians)
-    assert_array_equal(hist['count'], np.array([2, 1, 0]))
+    assert_array_equal(hist['count'], [2, 1, 0])
     assert_allclose(hist['sum_gradients'], [1, 3, 0])
     assert_allclose(hist['sum_hessians'], [2, 2, 0])
