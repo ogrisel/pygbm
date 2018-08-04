@@ -1,4 +1,4 @@
-# pygbm
+# pygbm [![Build Status](https://travis-ci.org/ogrisel/pygbm.svg?branch=master)](https://travis-ci.org/ogrisel/pygbm)
 
 Experimental Gradient Boosting Machines in Python.
 
