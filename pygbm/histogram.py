@@ -85,8 +85,7 @@ def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
       fastmath=True)
 def find_split(histogram, gradient_parent, hessian_parent, l2_regularization):
     gradient_left, hessian_left = 0., 0.
-    best_gain = 0.
-    best_bin_idx = 0
+    best_gain = -1.
     for bin_idx in range(histogram.shape[0]):
         gradient_left += histogram[bin_idx]['sum_gradients']
         hessian_left += histogram[bin_idx]['sum_hessians']
@@ -96,7 +95,17 @@ def find_split(histogram, gradient_parent, hessian_parent, l2_regularization):
                            gradient_right, hessian_right,
                            gradient_parent, hessian_parent,
                            l2_regularization)
-        if gain > best_gain:
+        if gain >= best_gain:
             best_gain = gain
             best_bin_idx = bin_idx
-    return (best_bin_idx, best_gain)
+            best_gradient_left = gradient_left
+            best_hessian_left = hessian_left
+            best_gradient_right = gradient_right
+            best_hessian_right = hessian_right
+
+    return (best_gain,
+            best_bin_idx,
+            best_gradient_left,
+            best_hessian_left,
+            best_gradient_right,
+            best_hessian_right)
