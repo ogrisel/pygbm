@@ -34,10 +34,10 @@ def test_build_histogram(build_func):
     assert_allclose(hist['sum_hessians'], [2, 2, 1])
 
 
-def test_find_split():
+@pytest.mark.parametrize('n_bins', [3, 32, 256])
+def test_find_split(n_bins):
     rng = np.random.RandomState(42)
     l2_regularization = 1e-3
-    n_bins = 254
     binned_feature = rng.randint(0, n_bins, size=int(1e4)).astype(np.uint8)
     sample_indices = np.arange(binned_feature.shape[0], dtype=np.uint32)
     ordered_hessians = np.ones_like(binned_feature, dtype=np.float32)
