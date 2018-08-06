@@ -2,12 +2,12 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 from numpy.testing import assert_array_equal
-from pygbm.histogram import _build_histogram_naive, build_histogram
+from pygbm.histogram import _build_histogram_naive, _build_histogram_unrolled
 from pygbm.histogram import find_split
 
 
 @pytest.mark.parametrize(
-    'build_func', [_build_histogram_naive, build_histogram])
+    'build_func', [_build_histogram_naive, _build_histogram_unrolled])
 def test_build_histogram(build_func):
     binned_feature = np.array([0, 2, 0, 1, 2, 0, 2, 1], dtype=np.uint8)
 
@@ -37,6 +37,7 @@ def test_build_histogram(build_func):
 @pytest.mark.parametrize('n_bins', [3, 32, 256])
 def test_find_split(n_bins):
     rng = np.random.RandomState(42)
+    feature_idx = 12
     l2_regularization = 1e-3
     binned_feature = rng.randint(0, n_bins, size=int(1e4)).astype(np.uint8)
     sample_indices = np.arange(binned_feature.shape[0], dtype=np.uint32)
@@ -48,11 +49,15 @@ def test_find_split(n_bins):
                                              dtype=np.float32)
             ordered_gradients[binned_feature <= true_bin] *= -1
 
-            histogram = build_histogram(n_bins, sample_indices, binned_feature,
-                                        ordered_gradients, ordered_hessians)
-            split_info = find_split(histogram, 12, ordered_gradients.sum(),
-                                    ordered_hessians.sum(), l2_regularization)
+            histogram = _build_histogram_unrolled(
+                n_bins, sample_indices, binned_feature,
+                ordered_gradients, ordered_hessians)
+
+            split_info = find_split(histogram, feature_idx,
+                                    ordered_gradients.sum(),
+                                    ordered_hessians.sum(),
+                                    l2_regularization)
 
             assert split_info.bin_idx == true_bin
             assert split_info.gain >= 0
-            assert split_info.feature_idx == 12
+            assert split_info.feature_idx == feature_idx

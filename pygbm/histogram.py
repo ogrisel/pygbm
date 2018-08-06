@@ -17,7 +17,6 @@ HISTOGRAM_DTYPE = np.dtype([
 ])
 
 
-
 @njit(fastmath=True)
 def _build_histogram_naive(n_bins, sample_indices, binned_feature,
                            ordered_gradients, ordered_hessians):
@@ -31,8 +30,8 @@ def _build_histogram_naive(n_bins, sample_indices, binned_feature,
 
 
 @njit(fastmath=True)
-def build_histogram(n_bins, sample_indices, binned_feature,
-                    ordered_gradients, ordered_hessians):
+def _build_histogram_unrolled(n_bins, sample_indices, binned_feature,
+                              ordered_gradients, ordered_hessians):
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     n_node_samples = sample_indices.shape[0]
     unrolled_upper = (n_node_samples // 4) * 4
