@@ -50,9 +50,9 @@ def test_find_split(n_bins):
 
             histogram = build_histogram(n_bins, sample_indices, binned_feature,
                                         ordered_gradients, ordered_hessians)
-            splitinfo = find_split(histogram, ordered_gradients.sum(),
-                                   ordered_hessians.sum(), l2_regularization)
-            gain, bin_idx, = splitinfo[:2]
+            split_info = find_split(histogram, 12, ordered_gradients.sum(),
+                                    ordered_hessians.sum(), l2_regularization)
 
-            assert bin_idx == true_bin
-            assert gain >= 0
+            assert split_info.bin_idx == true_bin
+            assert split_info.gain >= 0
+            assert split_info.feature_idx == 12

@@ -1,6 +1,13 @@
 import numpy as np
 from numba import njit
 from numba import float32, uint8
+from collections import namedtuple
+
+SplitInfo = namedtuple('SplitInfo', [
+    'gain', 'feature_idx', 'bin_idx',
+    'gradient_left', 'hessian_left',
+    'gradient_right', 'hessian_right',
+])
 
 
 HISTOGRAM_DTYPE = np.dtype([
@@ -8,6 +15,7 @@ HISTOGRAM_DTYPE = np.dtype([
     ('sum_hessians', np.float32),
     ('count', np.uint32),
 ])
+
 
 
 @njit(fastmath=True)
@@ -83,7 +91,8 @@ def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
 @njit(locals={'gradient_left': float32, 'hessian_left': float32,
               'best_gain': float32, 'best_bin_idx': uint8},
       fastmath=True)
-def find_split(histogram, gradient_parent, hessian_parent, l2_regularization):
+def find_split(histogram, feature_idx, gradient_parent, hessian_parent,
+               l2_regularization):
     gradient_left, hessian_left = 0., 0.
     best_gain = -1.
     for bin_idx in range(histogram.shape[0]):
@@ -103,9 +112,10 @@ def find_split(histogram, gradient_parent, hessian_parent, l2_regularization):
             best_gradient_right = gradient_right
             best_hessian_right = hessian_right
 
-    return (best_gain,
-            best_bin_idx,
-            best_gradient_left,
-            best_hessian_left,
-            best_gradient_right,
-            best_hessian_right)
+    return SplitInfo(best_gain,
+                     feature_idx,
+                     best_bin_idx,
+                     best_gradient_left,
+                     best_hessian_left,
+                     best_gradient_right,
+                     best_hessian_right)
