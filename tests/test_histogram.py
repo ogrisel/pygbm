@@ -2,12 +2,12 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 from numpy.testing import assert_array_equal
-from pygbm.histogram import build_histogram, build_histogram_unrolled
+from pygbm.histogram import _build_histogram_naive, build_histogram
 from pygbm.histogram import find_split
 
 
 @pytest.mark.parametrize(
-    'build_func', [build_histogram, build_histogram_unrolled])
+    'build_func', [_build_histogram_naive, build_histogram])
 def test_build_histogram(build_func):
     binned_feature = np.array([0, 2, 0, 1, 2, 0, 2, 1], dtype=np.uint8)
 
@@ -35,15 +35,25 @@ def test_build_histogram(build_func):
 
 
 def test_find_split():
-    binned_feature = np.array([0, 2, 0, 1, 2, 0, 2, 1], dtype=np.uint8)
-    ordered_gradients = np.array([-2, 1, -2, -1, 1, -2, 1, -1],
-                                 dtype=np.float32)
-    ordered_hessians = np.ones_like(binned_feature, dtype=np.float32)
+    rng = np.random.RandomState(42)
+    l2_regularization = 1e-3
+    n_bins = 254
+    binned_feature = rng.randint(0, n_bins, size=int(1e4)).astype(np.uint8)
     sample_indices = np.arange(binned_feature.shape[0], dtype=np.uint32)
-    histogram = build_histogram(3, sample_indices, binned_feature,
-                                ordered_gradients, ordered_hessians)
-    l2_regularization = 0.0001
-    bin_idx, gain = find_split(histogram, ordered_gradients.sum(),
-                               ordered_gradients.sum(), l2_regularization)
-    assert bin_idx == 1
-    assert gain > 0.
+    ordered_hessians = np.ones_like(binned_feature, dtype=np.float32)
+
+    for true_bin in range(1, n_bins - 1):
+        for sign in [-1, 1]:
+            ordered_gradients = np.full_like(binned_feature, sign,
+                                             dtype=np.float32)
+            ordered_gradients[binned_feature <= true_bin] *= -1
+
+            histogram = build_histogram(n_bins, sample_indices, binned_feature,
+                                        ordered_gradients, ordered_hessians)
+            bin_idx, gain = find_split(histogram,
+                                       ordered_gradients.sum(),
+                                       ordered_hessians.sum(),
+                                       l2_regularization)
+
+            assert bin_idx == true_bin
+            assert gain >= 0

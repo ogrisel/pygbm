@@ -11,8 +11,8 @@ HISTOGRAM_DTYPE = np.dtype([
 
 
 @njit(fastmath=True)
-def build_histogram(n_bins, sample_indices, binned_feature,
-                    ordered_gradients, ordered_hessians):
+def _build_histogram_naive(n_bins, sample_indices, binned_feature,
+                           ordered_gradients, ordered_hessians):
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     for i, sample_idx in enumerate(sample_indices):
         bin_idx = binned_feature[sample_idx]
@@ -23,8 +23,8 @@ def build_histogram(n_bins, sample_indices, binned_feature,
 
 
 @njit(fastmath=True)
-def build_histogram_unrolled(n_bins, sample_indices, binned_feature,
-                             ordered_gradients, ordered_hessians):
+def build_histogram(n_bins, sample_indices, binned_feature,
+                    ordered_gradients, ordered_hessians):
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     n_node_samples = sample_indices.shape[0]
     unrolled_upper = (n_node_samples // 4) * 4
@@ -59,7 +59,7 @@ def build_histogram_unrolled(n_bins, sample_indices, binned_feature,
     return histogram
 
 
-@njit(fastmath=True)
+@njit(fastmath=False)
 def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
                 gradient_parent, hessian_parent, l2_regularization):
     """Loss reduction
@@ -72,7 +72,7 @@ def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
     https://arxiv.org/abs/1603.02754
     """
     def negative_loss(gradient, hessian):
-        return gradient ** 2 / (hessian + l2_regularization)
+        return (gradient ** 2) / (hessian + l2_regularization)
 
     gain = negative_loss(gradient_left, hessian_left)
     gain += negative_loss(gradient_right, hessian_right)
@@ -84,11 +84,12 @@ def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
               'best_gain': float32, 'best_bin_idx': uint8},
       fastmath=True)
 def find_split(histogram, gradient_parent, hessian_parent, l2_regularization):
-    gradient_left, hessian_left, best_gain = 0., 0., 0.
+    gradient_left, hessian_left = 0., 0.
+    best_gain = 0.
     best_bin_idx = 0
     for bin_idx in range(histogram.shape[0]):
-        gradient_left += histogram[bin_idx].sum_gradients
-        hessian_left += histogram[bin_idx].sum_hessians
+        gradient_left += histogram[bin_idx]['sum_gradients']
+        hessian_left += histogram[bin_idx]['sum_hessians']
         gradient_right = gradient_parent - gradient_left
         hessian_right = hessian_parent - hessian_left
         gain = _split_gain(gradient_left, hessian_left,
