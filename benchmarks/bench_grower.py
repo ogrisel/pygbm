@@ -4,7 +4,7 @@ from joblib import Memory
 from pygbm.grower import TreeGrower
 
 
-m = Memory(location='/tmp')
+m = Memory(location='/tmp', mmap_mode='r')
 
 
 @m.cache
