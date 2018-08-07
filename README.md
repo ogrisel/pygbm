@@ -29,3 +29,9 @@ Run the tests with pytest:
 
 The `benchmarks` folder contains some scripts to evaluate the computation
 performance of various parts of pygbm.
+
+To profile the benchmarks, you can use [snakeviz](https://jiffyclub.github.io/snakeviz/) to get an interactive HTML report:
+
+    pip install snakeviz
+    python -m cProfile -o bench_grower.prof benchmarks/bench_grower.py
+    snakeviz bench_grower.prof
