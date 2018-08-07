@@ -36,25 +36,25 @@ def split_indices(sample_indices, split_info, context):
 
 
 @njit(parallel=False)
-def find_node_split(sample_indices, grower_context):
-    loss_dtype = grower_context.all_gradients.dtype
+def find_node_split(sample_indices, context):
+    loss_dtype = context.all_gradients.dtype
+    l2_regularization = max(context.l2_regularization, 1e-8)
     ordered_gradients = np.empty_like(sample_indices, dtype=loss_dtype)
     ordered_hessians = np.empty_like(sample_indices, dtype=loss_dtype)
 
     for i, sample_idx in enumerate(sample_indices):
-        ordered_gradients[i] = grower_context.all_gradients[sample_idx]
-        ordered_hessians[i] = grower_context.all_hessians[sample_idx]
+        ordered_gradients[i] = context.all_gradients[sample_idx]
+        ordered_hessians[i] = context.all_hessians[sample_idx]
 
     # TODO: use prange to parallelize this loop: we need to properly
     # type SplitInfo (probably using a jitclass) to be able to preallocate
     # the result data structure.
     split_infos = []
-    for feature_idx in range(grower_context.n_features):
-        binned_feature = grower_context.binned_features[:, feature_idx]
+    for feature_idx in range(context.n_features):
+        binned_feature = context.binned_features[:, feature_idx]
         split_info = _find_histogram_split(
-            feature_idx, binned_feature, grower_context.n_bins, sample_indices,
-            ordered_gradients, ordered_hessians,
-            grower_context.l2_regularization)
+            feature_idx, binned_feature, context.n_bins, sample_indices,
+            ordered_gradients, ordered_hessians, l2_regularization)
         split_infos.append(split_info)
 
     best_gain = None

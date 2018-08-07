@@ -18,8 +18,8 @@ class TreeNode:
 
 class TreeGrower:
     def __init__(self, features_data, all_gradients, all_hessians,
-                 max_leaf_nodes=None, max_depth=None, min_gain_split=1e-7,
-                 l2_regularization=1e-3, n_bins=256):
+                 max_leaf_nodes=None, max_depth=None, min_gain_to_split=0.,
+                 l2_regularization=0., n_bins=256):
         if features_data.dtype != np.uint8:
             raise NotImplementedError(
                 "Explicit feature binning required for now")
@@ -35,7 +35,7 @@ class TreeGrower:
         self.max_leaf_nodes = max_leaf_nodes
         self.max_depth = max_depth
         self.features_data = features_data
-        self.min_gain_split = min_gain_split
+        self.min_gain_to_split = min_gain_to_split
         self.splittable_nodes = []
         self.finalized_leaves = []
         self._intilialize_root()
@@ -61,7 +61,7 @@ class TreeGrower:
                 raise ValueError(f'side={side} should be "left" or "right"')
         split_info = find_node_split(node.sample_indices, self.context)
         node.split_info = split_info
-        if split_info.gain < self.min_gain_split:
+        if split_info.gain < self.min_gain_to_split:
             self._finalize_leaf(node)
         else:
             heappush(self.splittable_nodes, (split_info.gain, node))
