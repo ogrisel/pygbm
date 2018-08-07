@@ -73,9 +73,9 @@ class TreeGrower:
         if self.max_leaf_nodes is not None and self.max_leaf_nodes == 1:
             self._finalize_leaf(self.root)
             return
-        self._consider_splitability(self.root)
+        self._consider_splittability(self.root)
 
-    def _consider_splitability(self, node):
+    def _consider_splittability(self, node):
         split_info = find_node_split(node.sample_indices, self.context)
         node.split_info = split_info
         if split_info.gain < self.min_gain_to_split:
@@ -121,8 +121,8 @@ class TreeGrower:
             self._finalize_splittable_nodes()
 
         else:
-            self._consider_splitability(left_child_node)
-            self._consider_splitability(right_child_node)
+            self._consider_splittability(left_child_node)
+            self._consider_splittability(right_child_node)
         return left_child_node, right_child_node
 
     def can_split_further(self):
