@@ -37,8 +37,8 @@ def test_grow_tree(n_bins):
     all_hessians = np.ones_like(all_gradients)
 
     for stopping_param in [
-                {'min_gain_to_split': 0.001},
-                # {'max_leaf_nodes': 3},  # FIXME broken!
+                # {'min_gain_to_split': 0.001},
+                {'max_leaf_nodes': 3},  # FIXME broken!
             ]:
         grower = TreeGrower(features_data, all_gradients, all_hessians,
                             n_bins=n_bins, **stopping_param)
@@ -70,12 +70,14 @@ def test_grow_tree(n_bins):
         assert split_info.gain > 1.
         assert split_info.feature_idx == 1
         assert split_info.bin_idx == n_bins // 3
+        assert right_node.left_child is None
+        assert right_node.right_child is None
 
         # The right split has not been applied yet. Let's do it now:
         assert grower.can_split_further()
         right_left_node, right_right_node = grower.split_next()
-        assert right_node.left_child is right_left_node
-        assert right_node.right_child is right_right_node
+        assert right_left_node is right_node.left_child
+        assert right_right_node is right_node.right_child
 
         # All the leafs are pure, it is not possible to split any further:
         assert not grower.can_split_further()
