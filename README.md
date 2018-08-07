@@ -25,13 +25,20 @@ Run the tests with pytest:
     pip install -r requirements.txt
     pytest
 
-## Benchmarks
+## Benchmarking, profiling and performance debugging
 
 The `benchmarks` folder contains some scripts to evaluate the computation
 performance of various parts of pygbm.
 
-To profile the benchmarks, you can use [snakeviz](https://jiffyclub.github.io/snakeviz/) to get an interactive HTML report:
+To profile the benchmarks, you can use
+[snakeviz](https://jiffyclub.github.io/snakeviz/) to get an interactive
+HTML report:
 
     pip install snakeviz
     python -m cProfile -o bench_grower.prof benchmarks/bench_grower.py
     snakeviz bench_grower.prof
+
+To introspect the results of type inference steps in the numba sections
+called by a given benchmarking script:
+
+    numba --annotate-html bench_grower.html benchmarks/bench_grower.py
