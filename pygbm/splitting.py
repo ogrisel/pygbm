@@ -67,7 +67,7 @@ def _parallel_find_splits(sample_indices, ordered_gradients, ordered_hessians,
     return split_infos
 
 
-@njit
+@njit(locals={'l2_regularization': float32})
 def find_node_split(sample_indices, context):
     loss_dtype = context.all_gradients.dtype
     ordered_gradients = np.empty_like(sample_indices, dtype=loss_dtype)
