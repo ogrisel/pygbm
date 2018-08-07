@@ -1,5 +1,6 @@
-import numpy as np
+import warnings
 from heapq import heappush, heappop
+import numpy as np
 
 from .splitting import SplitContext, find_node_split, split_indices
 
@@ -23,6 +24,18 @@ class TreeNode:
             out += f", bin_idx={self.split_info.bin_idx}"
         return out
 
+    def __lt__(self, other_node):
+        """Comparison for priority queue
+
+        Nodes with high gain are higher priority than nodes with node gain.
+
+        heapq.heappush only need the '<' operator.
+        heapq.heappop take the smallest item first (smaller ishigher priority).
+        """
+        if self.split_info is None or other_node.split_info is None:
+            raise ValueError("Cannot compare nodes with split_info")
+        return self.split_info.gain > other_node.split_info.gain
+
 
 class TreeGrower:
     def __init__(self, features_data, all_gradients, all_hessians,
@@ -37,6 +50,9 @@ class TreeGrower:
         if max_depth is not None and max_depth < 1:
             raise ValueError(f'max_depth={max_depth} should not be'
                              f' smaller than 1')
+        if not features_data.flags.f_contiguous:
+            warnings.warn("Binned data should be passed as Fortran contiguous"
+                          "array for maximum efficiency.")
         self.context = SplitContext(
             features_data.shape[1], features_data, n_bins,
             all_gradients, all_hessians, l2_regularization)
@@ -65,9 +81,7 @@ class TreeGrower:
         if split_info.gain < self.min_gain_to_split:
             self._finalize_leaf(node)
         else:
-            # heappop will return the smallest item: use negative gain to
-            # retrieve high gain split firsts
-            heappush(self.splittable_nodes, (-split_info.gain, node))
+            heappush(self.splittable_nodes, node)
 
     def split_next(self):
         """Split the node with highest potential gain.
@@ -78,8 +92,8 @@ class TreeGrower:
         if len(self.splittable_nodes) == 0:
             raise StopIteration("No more splittable nodes")
 
-        # Extract node with highest gain split
-        _, node = heappop(self.splittable_nodes)
+        # Consider the node with the highest loss reduction (a.k.a. gain)
+        node = heappop(self.splittable_nodes)
 
         sample_indices_left, sample_indices_right = split_indices(
             node.sample_indices, node.split_info, self.context)
@@ -120,5 +134,5 @@ class TreeGrower:
 
     def _finalize_splittable_nodes(self):
         while len(self.splittable_nodes) > 0:
-            _, node = self.splittable_nodes.pop()
+            node = self.splittable_nodes.pop()
             self._finalize_leaf(node)

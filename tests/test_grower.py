@@ -37,8 +37,8 @@ def test_grow_tree(n_bins):
     all_hessians = np.ones_like(all_gradients)
 
     for stopping_param in [
-                # {'min_gain_to_split': 0.001},
-                {'max_leaf_nodes': 3},  # FIXME broken!
+                {'min_gain_to_split': 0.001},
+                {'max_leaf_nodes': 3},
             ]:
         grower = TreeGrower(features_data, all_gradients, all_hessians,
                             n_bins=n_bins, **stopping_param)

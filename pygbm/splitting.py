@@ -1,6 +1,6 @@
 from collections import namedtuple
 import numpy as np
-from numba import njit, float32, uint8
+from numba import njit, jitclass, prange, float32, uint8, uint32
 
 from .histogram import _build_histogram_unrolled
 
@@ -14,11 +14,27 @@ SplitContext = namedtuple('SplitContext', [
     'l2_regularization',
 ])
 
-SplitInfo = namedtuple('SplitInfo', [
-    'gain', 'feature_idx', 'bin_idx',
-    'gradient_left', 'hessian_left',
-    'gradient_right', 'hessian_right',
+
+@jitclass([
+    ('gain', float32),
+    ('feature_idx', uint32),
+    ('bin_idx', uint8),
+    ('gradient_left', float32),
+    ('hessian_left', float32),
+    ('gradient_right', float32),
+    ('hessian_right', float32),
 ])
+class SplitInfo:
+    def __init__(self, gain=0, feature_idx=0, bin_idx=0,
+                 gradient_left=0., hessian_left=0.,
+                 gradient_right=0., hessian_right=0.):
+        self.gain = gain
+        self.feature_idx = feature_idx
+        self.bin_idx = bin_idx
+        self.gradient_left = gradient_left
+        self.hessian_left = hessian_left
+        self.gradient_right = gradient_right
+        self.hessian_right = hessian_right
 
 
 @njit
@@ -35,10 +51,25 @@ def split_indices(sample_indices, split_info, context):
             np.array(sample_indices_right, dtype=np.uint32))
 
 
-@njit(parallel=False)
+@njit(parallel=True)
+def _parallel_find_splits(sample_indices, ordered_gradients, ordered_hessians,
+                          n_features, binned_features, n_bins,
+                          l2_regularization):
+    # Pre-allocate the results datastructure to be able to use prange
+    split_infos = [SplitInfo(0, 0, 0, 0., 0., 0., 0.)
+                   for i in range(n_features)]
+    for feature_idx in prange(n_features):
+        binned_feature = binned_features[:, feature_idx]
+        split_info = _find_histogram_split(
+            feature_idx, binned_feature, n_bins, sample_indices,
+            ordered_gradients, ordered_hessians, l2_regularization)
+        split_infos[feature_idx] = split_info
+    return split_infos
+
+
+@njit
 def find_node_split(sample_indices, context):
     loss_dtype = context.all_gradients.dtype
-    l2_regularization = max(context.l2_regularization, 1e-8)
     ordered_gradients = np.empty_like(sample_indices, dtype=loss_dtype)
     ordered_hessians = np.empty_like(sample_indices, dtype=loss_dtype)
 
@@ -46,17 +77,14 @@ def find_node_split(sample_indices, context):
         ordered_gradients[i] = context.all_gradients[sample_idx]
         ordered_hessians[i] = context.all_hessians[sample_idx]
 
-    # TODO: use prange to parallelize this loop: we need to properly
-    # type SplitInfo (probably using a jitclass) to be able to preallocate
-    # the result data structure.
-    split_infos = []
-    for feature_idx in range(context.n_features):
-        binned_feature = context.binned_features[:, feature_idx]
-        split_info = _find_histogram_split(
-            feature_idx, binned_feature, context.n_bins, sample_indices,
-            ordered_gradients, ordered_hessians, l2_regularization)
-        split_infos.append(split_info)
+    # XXX: To avoid dividing by 0 (but why?)
+    l2_regularization = max(context.l2_regularization, 1e-8)
 
+    split_infos = _parallel_find_splits(sample_indices, ordered_gradients,
+                                        ordered_hessians, context.n_features,
+                                        context.binned_features,
+                                        context.n_bins,
+                                        l2_regularization)
     best_gain = None
     for split_info in split_infos:
         gain = split_info.gain
