@@ -21,6 +21,7 @@ def _build_histogram_naive(n_bins, sample_indices, binned_feature,
     return histogram
 
 
+# TODO: try to give explicit type and contiguity information to @njit
 @njit(fastmath=True)
 def _build_histogram_unrolled(n_bins, sample_indices, binned_feature,
                               ordered_gradients, ordered_hessians):
