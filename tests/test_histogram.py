@@ -3,7 +3,6 @@ import pytest
 from numpy.testing import assert_allclose
 from numpy.testing import assert_array_equal
 from pygbm.histogram import _build_histogram_naive, _build_histogram_unrolled
-from pygbm.histogram import find_split
 
 
 @pytest.mark.parametrize(
@@ -32,32 +31,3 @@ def test_build_histogram(build_func):
     assert_array_equal(hist['count'], [2, 2, 1])
     assert_allclose(hist['sum_gradients'], [1, 4, 0])
     assert_allclose(hist['sum_hessians'], [2, 2, 1])
-
-
-@pytest.mark.parametrize('n_bins', [3, 32, 256])
-def test_find_split(n_bins):
-    rng = np.random.RandomState(42)
-    feature_idx = 12
-    l2_regularization = 1e-3
-    binned_feature = rng.randint(0, n_bins, size=int(1e4)).astype(np.uint8)
-    sample_indices = np.arange(binned_feature.shape[0], dtype=np.uint32)
-    ordered_hessians = np.ones_like(binned_feature, dtype=np.float32)
-
-    for true_bin in range(1, n_bins - 1):
-        for sign in [-1, 1]:
-            ordered_gradients = np.full_like(binned_feature, sign,
-                                             dtype=np.float32)
-            ordered_gradients[binned_feature <= true_bin] *= -1
-
-            histogram = _build_histogram_unrolled(
-                n_bins, sample_indices, binned_feature,
-                ordered_gradients, ordered_hessians)
-
-            split_info = find_split(histogram, feature_idx,
-                                    ordered_gradients.sum(),
-                                    ordered_hessians.sum(),
-                                    l2_regularization)
-
-            assert split_info.bin_idx == true_bin
-            assert split_info.gain >= 0
-            assert split_info.feature_idx == feature_idx

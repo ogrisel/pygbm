@@ -1,9 +1,13 @@
 import numpy as np
+import pytest
+
 from pygbm.grower import TreeGrower
 
 
-def test_grow_tree():
+@pytest.mark.parametrize('n_bins', [11, 42, 256])
+def test_grow_tree(n_bins):
     rng = np.random.RandomState(42)
+    n_bins = 256
 
     # Generate some test data directly binned in the [0-255] range so as
     # to test the grower code independently of the binning logic.
@@ -17,10 +21,10 @@ def test_grow_tree():
         grower code should have no trouble recovering the decision function
         from 10000 training samples.
         """
-        if input_features[0] <= 128:
+        if input_features[0] <= n_bins // 2:
             return -1
         else:
-            if input_features[1] <= 42:
+            if input_features[1] <= n_bins // 3:
                 return -1
             else:
                 return 1
@@ -32,7 +36,8 @@ def test_grow_tree():
     # (hardcoded for this test):
     all_gradients = target
     all_hessians = np.ones_like(all_gradients)
-    grower = TreeGrower(256, features_data, all_gradients, all_hessians)
+    grower = TreeGrower(features_data, all_gradients, all_hessians,
+                        n_bins=n_bins)
 
     # The root node is not yet splitted, but the best possible split has
     # already been evaluated:
@@ -41,7 +46,7 @@ def test_grow_tree():
 
     root_split = grower.root.split_info
     assert root_split.feature_idx == 0
-    assert root_split.bin_idx == 128
+    assert root_split.bin_idx == n_bins // 2
     assert len(grower.splittable_nodes) == 1
 
     # Calling split next applies the next split and computes the best split
@@ -60,7 +65,7 @@ def test_grow_tree():
     split_info = right_node.split_info
     assert split_info.gain > grower.min_gain_split
     assert split_info.feature_idx == 1
-    assert split_info.bin_idx == 42
+    assert split_info.bin_idx == n_bins // 3
 
     # The right split has not been applied yet. Let's do it now:
     assert grower.can_split_further()
