@@ -7,11 +7,10 @@ from pygbm.grower import TreeGrower
 @pytest.mark.parametrize('n_bins', [11, 42, 256])
 def test_grow_tree(n_bins):
     rng = np.random.RandomState(42)
-    n_bins = 256
 
-    # Generate some test data directly binned in the [0-255] range so as
-    # to test the grower code independently of the binning logic.
-    features_data = rng.randint(0, 255, size=(10000, 2), dtype=np.uint8)
+    # Generate some test data directly binned so as to test the grower code
+    # independently of the binning logic.
+    features_data = rng.randint(0, n_bins - 1, size=(10000, 2), dtype=np.uint8)
     features_data = np.asfortranarray(features_data)
 
     def true_decision_function(input_features):
