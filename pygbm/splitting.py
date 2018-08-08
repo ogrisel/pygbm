@@ -48,7 +48,7 @@ class SplitInfo:
 
 @njit
 def split_indices(sample_indices, split_info, context):
-    binned_feature = context.binned_features[:, split_info.feature_idx]
+    binned_feature = context.binned_features.T[split_info.feature_idx]
     sample_indices_left, sample_indices_right = [], []
     for sample_idx in sample_indices:
         if binned_feature[sample_idx] <= split_info.bin_idx:
