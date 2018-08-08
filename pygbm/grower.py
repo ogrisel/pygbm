@@ -2,7 +2,7 @@ import warnings
 from heapq import heappush, heappop
 import numpy as np
 
-from .splitting import SplitContext, find_node_split, split_indices
+from .splitting import HistogramSplitter
 
 
 class TreeNode:
@@ -53,7 +53,7 @@ class TreeGrower:
         if not features_data.flags.f_contiguous:
             warnings.warn("Binned data should be passed as Fortran contiguous"
                           "array for maximum efficiency.")
-        self.context = SplitContext(
+        self.splitter = HistogramSplitter(
             features_data.shape[1], features_data, n_bins,
             all_gradients, all_hessians, l2_regularization)
         self.max_leaf_nodes = max_leaf_nodes
@@ -68,15 +68,15 @@ class TreeGrower:
         n_samples = self.features_data.shape[0]
         depth = 0
         self.root = TreeNode(depth, np.arange(n_samples, dtype=np.uint32),
-                             self.context.all_gradients.sum(),
-                             self.context.all_hessians.sum())
+                             self.splitter.all_gradients.sum(),
+                             self.splitter.all_hessians.sum())
         if self.max_leaf_nodes is not None and self.max_leaf_nodes == 1:
             self._finalize_leaf(self.root)
             return
         self._consider_splittability(self.root)
 
     def _consider_splittability(self, node):
-        split_info = find_node_split(node.sample_indices, self.context)
+        split_info = self.splitter.find_node_split(node.sample_indices)
         node.split_info = split_info
         if split_info.gain < self.min_gain_to_split:
             self._finalize_leaf(node)
@@ -95,8 +95,8 @@ class TreeGrower:
         # Consider the node with the highest loss reduction (a.k.a. gain)
         node = heappop(self.splittable_nodes)
 
-        sample_indices_left, sample_indices_right = split_indices(
-            node.sample_indices, node.split_info, self.context)
+        sample_indices_left, sample_indices_right = \
+            self.splitter.split_indices(node.sample_indices, node.split_info)
 
         depth = node.depth + 1
         n_leaf_nodes = len(self.finalized_leaves) + len(self.splittable_nodes)

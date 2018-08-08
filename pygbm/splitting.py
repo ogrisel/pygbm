@@ -6,25 +6,6 @@ from .histogram import _build_histogram_unrolled
 
 
 @jitclass([
-    ('n_features', uint32),
-    ('binned_features', uint8[::1, :]),
-    ('n_bins', uint32),
-    ('all_gradients', float32[::1]),
-    ('all_hessians', float32[::1]),
-    ('l2_regularization', float32),
-])
-class SplitContext:
-    def __init__(self, n_features, binned_features, n_bins,
-                 all_gradients, all_hessians, l2_regularization):
-        self.n_features = n_features
-        self.binned_features = binned_features
-        self.n_bins = n_bins
-        self.all_gradients = all_gradients
-        self.all_hessians = all_hessians
-        self.l2_regularization = l2_regularization
-
-
-@jitclass([
     ('gain', float32),
     ('feature_idx', uint32),
     ('bin_idx', uint8),
@@ -46,20 +27,6 @@ class SplitInfo:
         self.hessian_right = hessian_right
 
 
-@njit
-def split_indices(sample_indices, split_info, context):
-    binned_feature = context.binned_features.T[split_info.feature_idx]
-    sample_indices_left, sample_indices_right = [], []
-    for sample_idx in sample_indices:
-        if binned_feature[sample_idx] <= split_info.bin_idx:
-            sample_indices_left.append(sample_idx)
-        else:
-            sample_indices_right.append(sample_idx)
-
-    return (np.array(sample_indices_left, dtype=np.uint32),
-            np.array(sample_indices_right, dtype=np.uint32))
-
-
 @njit(parallel=True)
 def _parallel_find_splits(sample_indices, ordered_gradients, ordered_hessians,
                           n_features, binned_features, n_bins,
@@ -76,31 +43,58 @@ def _parallel_find_splits(sample_indices, ordered_gradients, ordered_hessians,
     return split_infos
 
 
-@njit(locals={'l2_regularization': float32})
-def find_node_split(sample_indices, context):
-    loss_dtype = context.all_gradients.dtype
-    ordered_gradients = np.empty_like(sample_indices, dtype=loss_dtype)
-    ordered_hessians = np.empty_like(sample_indices, dtype=loss_dtype)
+@jitclass([
+    ('n_features', uint32),
+    ('binned_features', uint8[::1, :]),
+    ('n_bins', uint32),
+    ('all_gradients', float32[::1]),
+    ('all_hessians', float32[::1]),
+    ('l2_regularization', float32),
+])
+class HistogramSplitter:
+    def __init__(self, n_features, binned_features, n_bins,
+                 all_gradients, all_hessians, l2_regularization):
+        self.n_features = n_features
+        self.binned_features = binned_features
+        self.n_bins = n_bins
+        self.all_gradients = all_gradients
+        self.all_hessians = all_hessians
+        # XXX: To avoid dividing by 0 (but why?)
+        self.l2_regularization = max(l2_regularization, 1e-8)
 
-    for i, sample_idx in enumerate(sample_indices):
-        ordered_gradients[i] = context.all_gradients[sample_idx]
-        ordered_hessians[i] = context.all_hessians[sample_idx]
+    def split_indices(self, sample_indices, split_info):
+        binned_feature = self.binned_features.T[split_info.feature_idx]
+        sample_indices_left, sample_indices_right = [], []
+        for sample_idx in sample_indices:
+            if binned_feature[sample_idx] <= split_info.bin_idx:
+                sample_indices_left.append(sample_idx)
+            else:
+                sample_indices_right.append(sample_idx)
 
-    # XXX: To avoid dividing by 0 (but why?)
-    l2_regularization = max(context.l2_regularization, 1e-8)
+        return (np.array(sample_indices_left, dtype=np.uint32),
+                np.array(sample_indices_right, dtype=np.uint32))
 
-    split_infos = _parallel_find_splits(sample_indices, ordered_gradients,
-                                        ordered_hessians, context.n_features,
-                                        context.binned_features,
-                                        context.n_bins,
-                                        l2_regularization)
-    best_gain = None
-    for split_info in split_infos:
-        gain = split_info.gain
-        if best_gain is None or gain > best_gain:
-            best_gain = gain
-            best_split_info = split_info
-    return best_split_info
+    def find_node_split(self, sample_indices):
+        loss_dtype = self.all_gradients.dtype
+        ordered_gradients = np.empty_like(sample_indices, dtype=loss_dtype)
+        ordered_hessians = np.empty_like(sample_indices, dtype=loss_dtype)
+
+        for i, sample_idx in enumerate(sample_indices):
+            ordered_gradients[i] = self.all_gradients[sample_idx]
+            ordered_hessians[i] = self.all_hessians[sample_idx]
+
+        split_infos = _parallel_find_splits(sample_indices, ordered_gradients,
+                                            ordered_hessians, self.n_features,
+                                            self.binned_features,
+                                            self.n_bins,
+                                            self.l2_regularization)
+        best_gain = None
+        for split_info in split_infos:
+            gain = split_info.gain
+            if best_gain is None or gain > best_gain:
+                best_gain = gain
+                best_split_info = split_info
+        return best_split_info
 
 
 @njit(fastmath=False)
