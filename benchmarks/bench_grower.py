@@ -22,9 +22,9 @@ def make_data(n_bins=256, n_samples=int(1e6), n_features=100,
 
 
 n_bins = 256
-n_samples, n_features = int(1e8), 10
+n_samples, n_features = int(1e7), 200
 binned_features, gradients = make_data(
-    n_bins=n_bins, n_samples=int(1e7), n_features=200)
+    n_bins=n_bins, n_samples=n_samples, n_features=n_features)
 hessians = np.ones(shape=1, dtype=gradients.dtype)
 
 print(f"Growing one tree on {binned_features.nbytes / 1e9:0.1f} GB of "
