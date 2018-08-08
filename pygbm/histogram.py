@@ -1,5 +1,5 @@
 import numpy as np
-from numba import njit
+from numba import njit, from_dtype, u1, u4, f4
 
 
 HISTOGRAM_DTYPE = np.dtype([
@@ -8,8 +8,11 @@ HISTOGRAM_DTYPE = np.dtype([
     ('count', np.uint32),
 ])
 
+HISTOGRAM_NUMBA_TYPE = from_dtype(HISTOGRAM_DTYPE)[::1]
 
-@njit(fastmath=True)
+
+@njit(HISTOGRAM_NUMBA_TYPE(u4, u4[::1], u1[::1], f4[::1], f4[::1]),
+      fastmath=True)
 def _build_histogram_naive(n_bins, sample_indices, binned_feature,
                            ordered_gradients, ordered_hessians):
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
@@ -21,8 +24,8 @@ def _build_histogram_naive(n_bins, sample_indices, binned_feature,
     return histogram
 
 
-# TODO: try to give explicit type and contiguity information to @njit
-@njit(fastmath=True)
+@njit(HISTOGRAM_NUMBA_TYPE(u4, u4[::1], u1[::1], f4[::1], f4[::1]),
+      fastmath=True)
 def _build_histogram_unrolled(n_bins, sample_indices, binned_feature,
                               ordered_gradients, ordered_hessians):
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)

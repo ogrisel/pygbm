@@ -1,18 +1,27 @@
-from collections import namedtuple
+# from collections import namedtuple
 import numpy as np
 from numba import njit, jitclass, prange, float32, uint8, uint32
 
 from .histogram import _build_histogram_unrolled
 
 
-SplitContext = namedtuple('SplitContext', [
-    'n_features',
-    'binned_features',
-    'n_bins',
-    'all_gradients',
-    'all_hessians',
-    'l2_regularization',
+@jitclass([
+    ('n_features', uint32),
+    ('binned_features', uint8[::1, :]),
+    ('n_bins', uint32),
+    ('all_gradients', float32[::1]),
+    ('all_hessians', float32[::1]),
+    ('l2_regularization', float32),
 ])
+class SplitContext:
+    def __init__(self, n_features, binned_features, n_bins,
+                 all_gradients, all_hessians, l2_regularization):
+        self.n_features = n_features
+        self.binned_features = binned_features
+        self.n_bins = n_bins
+        self.all_gradients = all_gradients
+        self.all_hessians = all_hessians
+        self.l2_regularization = l2_regularization
 
 
 @jitclass([
@@ -59,7 +68,7 @@ def _parallel_find_splits(sample_indices, ordered_gradients, ordered_hessians,
     split_infos = [SplitInfo(0, 0, 0, 0., 0., 0., 0.)
                    for i in range(n_features)]
     for feature_idx in prange(n_features):
-        binned_feature = binned_features[:, feature_idx]
+        binned_feature = binned_features.T[feature_idx]
         split_info = _find_histogram_split(
             feature_idx, binned_feature, n_bins, sample_indices,
             ordered_gradients, ordered_hessians, l2_regularization)

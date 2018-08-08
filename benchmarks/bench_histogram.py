@@ -5,7 +5,7 @@ from pygbm.histogram import _build_histogram_naive
 from pygbm.histogram import _build_histogram_unrolled
 
 
-m = Memory(location='/tmp', mmap_mode='r')
+m = Memory(location='/tmp')
 
 
 @m.cache
