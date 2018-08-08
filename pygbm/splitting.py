@@ -1,8 +1,8 @@
 # from collections import namedtuple
 import numpy as np
 from numba import njit, jitclass, prange, float32, uint8, uint32
-
-from .histogram import _build_histogram_unrolled
+from .histogram import _build_ghc_histogram_unrolled
+from .histogram import _build_gc_histogram_unrolled
 
 
 @jitclass([
@@ -49,6 +49,7 @@ def _parallel_find_splits(sample_indices, ordered_gradients, ordered_hessians,
     ('n_bins', uint32),
     ('all_gradients', float32[::1]),
     ('all_hessians', float32[::1]),
+    ('constant_hessian', uint8),
     ('l2_regularization', float32),
 ])
 class HistogramSplitter:
@@ -59,6 +60,7 @@ class HistogramSplitter:
         self.n_bins = n_bins
         self.all_gradients = all_gradients
         self.all_hessians = all_hessians
+        self.constant_hessian = all_hessians.shape[0] == 1
         # XXX: To avoid dividing by 0 (but why?)
         self.l2_regularization = max(l2_regularization, 1e-8)
 
@@ -77,11 +79,16 @@ class HistogramSplitter:
     def find_node_split(self, sample_indices):
         loss_dtype = self.all_gradients.dtype
         ordered_gradients = np.empty_like(sample_indices, dtype=loss_dtype)
-        ordered_hessians = np.empty_like(sample_indices, dtype=loss_dtype)
 
-        for i, sample_idx in enumerate(sample_indices):
-            ordered_gradients[i] = self.all_gradients[sample_idx]
-            ordered_hessians[i] = self.all_hessians[sample_idx]
+        if self.constant_hessian:
+            ordered_hessians = self.all_hessians
+            for i, sample_idx in enumerate(sample_indices):
+                ordered_gradients[i] = self.all_gradients[sample_idx]
+        else:
+            ordered_hessians = np.empty_like(sample_indices, dtype=loss_dtype)
+            for i, sample_idx in enumerate(sample_indices):
+                ordered_gradients[i] = self.all_gradients[sample_idx]
+                ordered_hessians[i] = self.all_hessians[sample_idx]
 
         split_infos = _parallel_find_splits(sample_indices, ordered_gradients,
                                             ordered_hessians, self.n_features,
@@ -119,24 +126,34 @@ def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
 
 
 @njit(locals={'gradient_left': float32, 'hessian_left': float32,
-              'best_gain': float32, 'best_bin_idx': uint8},
+              'best_gain': float32, 'best_bin_idx': uint8,
+              'constant_hessian': uint8},
       fastmath=True)
 def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
                           ordered_gradients, ordered_hessians,
                           l2_regularization):
 
     gradient_parent = ordered_gradients.sum()
-    hessian_parent = ordered_hessians.sum()
-
-    histogram = _build_histogram_unrolled(
-        n_bins, sample_indices, binned_feature,
-        ordered_gradients, ordered_hessians)
+    constant_hessian = ordered_hessians.shape[0] == 1
+    if constant_hessian:
+        hessian_parent = ordered_hessians[0] * sample_indices.shape[0]
+        histogram = _build_gc_histogram_unrolled(
+            n_bins, sample_indices, binned_feature,
+            ordered_gradients)
+    else:
+        hessian_parent = ordered_hessians.sum()
+        histogram = _build_ghc_histogram_unrolled(
+            n_bins, sample_indices, binned_feature,
+            ordered_gradients, ordered_hessians)
 
     gradient_left, hessian_left = 0., 0.
     best_gain = -1.
     for bin_idx in range(histogram.shape[0]):
         gradient_left += histogram[bin_idx]['sum_gradients']
-        hessian_left += histogram[bin_idx]['sum_hessians']
+        if constant_hessian:
+            hessian_left += histogram[bin_idx]['count'] * ordered_hessians[0]
+        else:
+            hessian_left += histogram[bin_idx]['sum_hessians']
         gradient_right = gradient_parent - gradient_left
         hessian_right = hessian_parent - hessian_left
         gain = _split_gain(gradient_left, hessian_left,

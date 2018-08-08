@@ -2,11 +2,12 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 from numpy.testing import assert_array_equal
-from pygbm.histogram import _build_histogram_naive, _build_histogram_unrolled
+from pygbm.histogram import _build_ghc_histogram_naive
+from pygbm.histogram import _build_ghc_histogram_unrolled
 
 
 @pytest.mark.parametrize(
-    'build_func', [_build_histogram_naive, _build_histogram_unrolled])
+    'build_func', [_build_ghc_histogram_naive, _build_ghc_histogram_unrolled])
 def test_build_histogram(build_func):
     binned_feature = np.array([0, 2, 0, 1, 2, 0, 2, 1], dtype=np.uint8)
 
