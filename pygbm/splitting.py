@@ -3,6 +3,8 @@ import numpy as np
 from numba import njit, jitclass, prange, float32, uint8, uint32
 from .histogram import _build_ghc_histogram_unrolled
 from .histogram import _build_gc_histogram_unrolled
+from .histogram import _build_ghc_root_histogram_unrolled
+from .histogram import _build_gc_root_histogram_unrolled
 
 
 @jitclass([
@@ -81,20 +83,29 @@ class HistogramSplitter:
 
     def find_node_split(self, sample_indices):
         loss_dtype = self.all_gradients.dtype
-        ordered_gradients = np.empty_like(sample_indices, dtype=loss_dtype)
 
-        if self.constant_hessian:
+        if sample_indices.shape[0] == self.all_gradients.shape[0]:
+            # Root node: the ordering of sample_indices and all_gradients
+            # are expected to be consistent in this case.
+            ordered_gradients = self.all_gradients
             ordered_hessians = self.all_hessians
-            for i, sample_idx in enumerate(sample_indices):
-                ordered_gradients[i] = self.all_gradients[sample_idx]
         else:
-            ordered_hessians = np.empty_like(sample_indices, dtype=loss_dtype)
-            for i, sample_idx in enumerate(sample_indices):
-                ordered_gradients[i] = self.all_gradients[sample_idx]
-                ordered_hessians[i] = self.all_hessians[sample_idx]
+            ordered_gradients = np.empty_like(sample_indices, dtype=loss_dtype)
+            if self.constant_hessian:
+                ordered_hessians = self.all_hessians
+                for i, sample_idx in enumerate(sample_indices):
+                    ordered_gradients[i] = self.all_gradients[sample_idx]
+            else:
+                ordered_hessians = np.empty_like(sample_indices,
+                                                 dtype=loss_dtype)
+                for i, sample_idx in enumerate(sample_indices):
+                    ordered_gradients[i] = self.all_gradients[sample_idx]
+                    ordered_hessians[i] = self.all_hessians[sample_idx]
 
-        split_infos = _parallel_find_splits(sample_indices, ordered_gradients,
-                                            ordered_hessians, self.n_features,
+        split_infos = _parallel_find_splits(sample_indices,
+                                            ordered_gradients,
+                                            ordered_hessians,
+                                            self.n_features,
                                             self.binned_features,
                                             self.n_bins,
                                             self.l2_regularization,
@@ -142,17 +153,28 @@ def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
     best_gain = -1.
 
     gradient_parent = ordered_gradients.sum()
+    n_samples_node = sample_indices.shape[0]
+    root_node = n_samples_node == binned_feature.shape[0]
     constant_hessian = ordered_hessians.shape[0] == 1
     if constant_hessian:
-        hessian_parent = ordered_hessians[0] * sample_indices.shape[0]
-        histogram = _build_gc_histogram_unrolled(
-            n_bins, sample_indices, binned_feature,
-            ordered_gradients)
+        hessian_parent = ordered_hessians[0] * n_samples_node
+    if root_node:
+        if constant_hessian:
+            histogram = _build_gc_root_histogram_unrolled(
+                n_bins, binned_feature, ordered_gradients)
+        else:
+            hessian_parent = ordered_hessians.sum()
+            histogram = _build_ghc_root_histogram_unrolled(
+                n_bins, binned_feature, ordered_gradients, ordered_hessians)
     else:
-        hessian_parent = ordered_hessians.sum()
-        histogram = _build_ghc_histogram_unrolled(
-            n_bins, sample_indices, binned_feature,
-            ordered_gradients, ordered_hessians)
+        if constant_hessian:
+            histogram = _build_gc_histogram_unrolled(
+                n_bins, sample_indices, binned_feature, ordered_gradients)
+        else:
+            hessian_parent = ordered_hessians.sum()
+            histogram = _build_ghc_histogram_unrolled(
+                n_bins, sample_indices, binned_feature, ordered_gradients,
+                ordered_hessians)
 
     gradient_left, hessian_left = 0., 0.
     for bin_idx in range(histogram.shape[0]):
