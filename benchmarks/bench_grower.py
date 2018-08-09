@@ -30,15 +30,19 @@ hessians = np.ones(shape=1, dtype=gradients.dtype)
 print(f"Growing one tree on {binned_features.nbytes / 1e9:0.1f} GB of "
       f"random data ({n_samples:.0e} samples, {n_features} features).")
 print("Finding the best split on the root node...")
-tic = time()
+tree_start = tic = time()
 grower = TreeGrower(binned_features, gradients, hessians, n_bins=n_bins,
-                    max_leaf_nodes=5)
+                    max_leaf_nodes=255)
 toc = time()
 print(f"done in {toc - tic:0.3f}s")
 
 while grower.can_split_further():
     print("Splitting next node...")
     tic = time()
-    grower.split_next()
+    left, right = grower.split_next()
     toc = time()
+    print("left node: ", left)
+    print("right node: ", right)
     print(f"done in {toc - tic:0.3f}s")
+
+print(f"{len(grower.finalized_leaves)} leaves in {time() - tree_start:0.3f}s")

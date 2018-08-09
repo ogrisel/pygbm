@@ -30,7 +30,7 @@ class SplitInfo:
 @njit(parallel=True)
 def _parallel_find_splits(sample_indices, ordered_gradients, ordered_hessians,
                           n_features, binned_features, n_bins,
-                          l2_regularization):
+                          l2_regularization, min_hessian_to_split):
     # Pre-allocate the results datastructure to be able to use prange
     split_infos = [SplitInfo(0, 0, 0, 0., 0., 0., 0.)
                    for i in range(n_features)]
@@ -38,7 +38,8 @@ def _parallel_find_splits(sample_indices, ordered_gradients, ordered_hessians,
         binned_feature = binned_features.T[feature_idx]
         split_info = _find_histogram_split(
             feature_idx, binned_feature, n_bins, sample_indices,
-            ordered_gradients, ordered_hessians, l2_regularization)
+            ordered_gradients, ordered_hessians, l2_regularization,
+            min_hessian_to_split)
         split_infos[feature_idx] = split_info
     return split_infos
 
@@ -51,18 +52,20 @@ def _parallel_find_splits(sample_indices, ordered_gradients, ordered_hessians,
     ('all_hessians', float32[::1]),
     ('constant_hessian', uint8),
     ('l2_regularization', float32),
+    ('min_hessian_to_split', float32),
 ])
 class HistogramSplitter:
     def __init__(self, n_features, binned_features, n_bins,
-                 all_gradients, all_hessians, l2_regularization):
+                 all_gradients, all_hessians, l2_regularization,
+                 min_hessian_to_split=1e-3):
         self.n_features = n_features
         self.binned_features = binned_features
         self.n_bins = n_bins
         self.all_gradients = all_gradients
         self.all_hessians = all_hessians
         self.constant_hessian = all_hessians.shape[0] == 1
-        # XXX: To avoid dividing by 0 (but why?)
-        self.l2_regularization = max(l2_regularization, 1e-8)
+        self.l2_regularization = l2_regularization
+        self.min_hessian_to_split = min_hessian_to_split
 
     def split_indices(self, sample_indices, split_info):
         binned_feature = self.binned_features.T[split_info.feature_idx]
@@ -94,7 +97,8 @@ class HistogramSplitter:
                                             ordered_hessians, self.n_features,
                                             self.binned_features,
                                             self.n_bins,
-                                            self.l2_regularization)
+                                            self.l2_regularization,
+                                            self.min_hessian_to_split)
         best_gain = None
         for split_info in split_infos:
             gain = split_info.gain
@@ -131,7 +135,11 @@ def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
       fastmath=True)
 def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
                           ordered_gradients, ordered_hessians,
-                          l2_regularization):
+                          l2_regularization, min_hessian_to_split):
+    # best_bin_idx = -1 is used if all hessians sums are bellow
+    # min_hessian_to_split
+    best_bin_idx = -1
+    best_gain = -1.
 
     gradient_parent = ordered_gradients.sum()
     constant_hessian = ordered_hessians.shape[0] == 1
@@ -147,15 +155,18 @@ def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
             ordered_gradients, ordered_hessians)
 
     gradient_left, hessian_left = 0., 0.
-    best_gain = -1.
     for bin_idx in range(histogram.shape[0]):
         gradient_left += histogram[bin_idx]['sum_gradients']
         if constant_hessian:
             hessian_left += histogram[bin_idx]['count'] * ordered_hessians[0]
         else:
             hessian_left += histogram[bin_idx]['sum_hessians']
-        gradient_right = gradient_parent - gradient_left
+        if hessian_left < min_hessian_to_split:
+            continue
         hessian_right = hessian_parent - hessian_left
+        if hessian_right < min_hessian_to_split:
+            continue
+        gradient_right = gradient_parent - gradient_left
         gain = _split_gain(gradient_left, hessian_left,
                            gradient_right, hessian_right,
                            gradient_parent, hessian_parent,

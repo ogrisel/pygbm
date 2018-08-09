@@ -18,7 +18,8 @@ class TreeNode:
 
     def __repr__(self):
         # To help with debugging
-        out = f"TreeNode: depth={self.depth}"
+        out = f"TreeNode: depth={self.depth}, "
+        out += f"samples={len(self.sample_indices)}"
         if self.split_info is not None:
             out += f", feature_idx={self.split_info.feature_idx}"
             out += f", bin_idx={self.split_info.bin_idx}"
@@ -40,7 +41,7 @@ class TreeNode:
 class TreeGrower:
     def __init__(self, features_data, all_gradients, all_hessians,
                  max_leaf_nodes=None, max_depth=None, min_gain_to_split=0.,
-                 l2_regularization=0., n_bins=256):
+                 n_bins=256, l2_regularization=0., min_hessian_to_split=1e-3):
         if features_data.dtype != np.uint8:
             raise NotImplementedError(
                 "Explicit feature binning required for now")
@@ -55,7 +56,8 @@ class TreeGrower:
                           "array for maximum efficiency.")
         self.splitter = HistogramSplitter(
             features_data.shape[1], features_data, n_bins,
-            all_gradients, all_hessians, l2_regularization)
+            all_gradients, all_hessians, l2_regularization,
+            min_hessian_to_split)
         self.max_leaf_nodes = max_leaf_nodes
         self.max_depth = max_depth
         self.features_data = features_data

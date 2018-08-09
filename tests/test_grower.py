@@ -4,6 +4,22 @@ import pytest
 from pygbm.grower import TreeGrower
 
 
+def _check_children_consistency(parent, left, right):
+    assert parent.left_child is left
+    assert parent.right_child is right
+
+    # each sample from the parent is propagated to one of the two children
+    assert (len(left.sample_indices) + len(right.sample_indices)
+            == len(parent.sample_indices))
+
+    assert (set(left.sample_indices).union(set(right.sample_indices))
+            == set(parent.sample_indices))
+
+    # samples are sent either to the left or the right node, never to both
+    assert (set(left.sample_indices).intersection(set(right.sample_indices))
+            == set())
+
+
 @pytest.mark.parametrize('n_bins, constant_hessian, stopping_param', [
     (11, True, "min_gain_to_split"),
     (11, False, "min_gain_to_split"),
@@ -16,10 +32,12 @@ from pygbm.grower import TreeGrower
 ])
 def test_grow_tree(n_bins, constant_hessian, stopping_param):
     rng = np.random.RandomState(42)
+    n_samples = 10000
 
     # Generate some test data directly binned so as to test the grower code
     # independently of the binning logic.
-    features_data = rng.randint(0, n_bins - 1, size=(10000, 2), dtype=np.uint8)
+    features_data = rng.randint(0, n_bins - 1, size=(n_samples, 2),
+                                dtype=np.uint8)
     features_data = np.asfortranarray(features_data)
 
     def true_decision_function(input_features):
@@ -70,8 +88,12 @@ def test_grow_tree(n_bins, constant_hessian, stopping_param):
     # for each of the two newly introduced children nodes.
     assert grower.can_split_further()
     left_node, right_node = grower.split_next()
-    assert grower.root.left_child is left_node
-    assert grower.root.right_child is right_node
+
+    # All training samples have ben splitted in the two nodes, approximately
+    # 50%/50%
+    _check_children_consistency(grower.root, left_node, right_node)
+    assert len(left_node.sample_indices) > 0.4 * n_samples
+    assert len(left_node.sample_indices) < 0.6 * n_samples
 
     if grower.min_gain_to_split > 0:
         # The left node is too pure: there is no gain to split it further.
@@ -89,8 +111,12 @@ def test_grow_tree(n_bins, constant_hessian, stopping_param):
     # The right split has not been applied yet. Let's do it now:
     assert grower.can_split_further()
     right_left_node, right_right_node = grower.split_next()
-    assert right_left_node is right_node.left_child
-    assert right_right_node is right_node.right_child
+    _check_children_consistency(right_node, right_left_node, right_right_node)
+    assert len(right_left_node.sample_indices) > 0.1 * n_samples
+    assert len(right_left_node.sample_indices) < 0.2 * n_samples
+
+    assert len(right_right_node.sample_indices) > 0.2 * n_samples
+    assert len(right_right_node.sample_indices) < 0.4 * n_samples
 
     # All the leafs are pure, it is not possible to split any further:
     assert not grower.can_split_further()
