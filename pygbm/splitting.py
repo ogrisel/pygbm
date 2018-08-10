@@ -141,8 +141,8 @@ def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
 
 
 @njit(locals={'gradient_left': float32, 'hessian_left': float32,
-              'best_gain': float32, 'best_bin_idx': uint8,
-              'constant_hessian': uint8},
+              'hessian_parent': float32, 'constant_hessian': uint8,
+              'best_gain': float32, 'best_bin_idx': uint8},
       fastmath=True)
 def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
                           ordered_gradients, ordered_hessians,
