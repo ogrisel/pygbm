@@ -37,6 +37,41 @@ def test_build_histogram(build_func):
     assert_allclose(hist['sum_hessians'], [2, 2, 1])
 
 
+def test_histogram_sample_order_independence():
+    rng = np.random.RandomState(42)
+    n_sub_samples = 100
+    n_samples = 1000
+    n_bins = 256
+
+    binned_feature = rng.randint(0, n_bins - 1, size=n_samples, dtype=np.uint8)
+    sample_indices = rng.choice(np.arange(n_samples, dtype=np.uint32),
+                                n_sub_samples, replace=False)
+    ordered_gradients = rng.randn(n_sub_samples).astype(np.float32)
+    hist_gc = _build_gc_histogram_unrolled(n_bins, sample_indices,
+                                           binned_feature, ordered_gradients)
+
+    ordered_hessians = rng.exponential(size=n_sub_samples).astype(np.float32)
+    hist_ghc = _build_ghc_histogram_unrolled(n_bins, sample_indices,
+                                             binned_feature, ordered_gradients,
+                                             ordered_hessians)
+
+    permutation = rng.permutation(n_sub_samples)
+    hist_gc_perm = _build_gc_histogram_unrolled(
+        n_bins, sample_indices[permutation], binned_feature,
+        ordered_gradients[permutation])
+
+    hist_ghc_perm = _build_ghc_histogram_unrolled(
+        n_bins, sample_indices[permutation], binned_feature,
+        ordered_gradients[permutation], ordered_hessians[permutation])
+
+    assert_allclose(hist_gc['sum_gradients'], hist_gc_perm['sum_gradients'])
+    assert_array_equal(hist_gc['count'], hist_gc_perm['count'])
+
+    assert_allclose(hist_ghc['sum_gradients'], hist_ghc_perm['sum_gradients'])
+    assert_allclose(hist_ghc['sum_hessians'], hist_ghc_perm['sum_hessians'])
+    assert_array_equal(hist_ghc['count'], hist_ghc_perm['count'])
+
+
 def test_compare_histograms_optimized_vs_general():
     # Check that optimized histograms are consistent with equivalent
     # non-optimized more general versions
