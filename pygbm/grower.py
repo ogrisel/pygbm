@@ -6,9 +6,10 @@ from .splitting import HistogramSplitter
 
 
 class TreeNode:
-    split_info = None
-    left_child = None
-    right_child = None
+    split_info = None  # Result of the split evaluation
+    left_child = None  # Link to left node (only for non-leaf nodes)
+    right_child = None  # Link to right node (only for non-leaf nodes)
+    weight = None  # Prediction weight (only for leaf nodes)
 
     def __init__(self, depth, sample_indices, sum_gradients, sum_hessians):
         self.depth = depth
@@ -41,7 +42,8 @@ class TreeNode:
 class TreeGrower:
     def __init__(self, features_data, all_gradients, all_hessians,
                  max_leaf_nodes=None, max_depth=None, min_gain_to_split=0.,
-                 n_bins=256, l2_regularization=0., min_hessian_to_split=1e-3):
+                 n_bins=256, l2_regularization=0., min_hessian_to_split=1e-3,
+                 shrinkage=1.):
         if features_data.dtype != np.uint8:
             raise NotImplementedError(
                 "Explicit feature binning required for now")
@@ -62,6 +64,7 @@ class TreeGrower:
         self.max_depth = max_depth
         self.features_data = features_data
         self.min_gain_to_split = min_gain_to_split
+        self.shrinkage = shrinkage
         self.splittable_nodes = []
         self.finalized_leaves = []
         self._intilialize_root()
@@ -79,9 +82,9 @@ class TreeGrower:
         if self.max_leaf_nodes is not None and self.max_leaf_nodes == 1:
             self._finalize_leaf(self.root)
             return
-        self._consider_splittability(self.root)
+        self._compute_spittability(self.root)
 
-    def _consider_splittability(self, node):
+    def _compute_spittability(self, node):
         split_info = self.splitter.find_node_split(node.sample_indices)
         node.split_info = split_info
         if split_info.gain < self.min_gain_to_split:
@@ -92,8 +95,7 @@ class TreeGrower:
     def split_next(self):
         """Split the node with highest potential gain.
 
-        Return False if there are no remaining splittable nodes after this
-        split.
+        Return the two resulting nodes created by the split.
         """
         if len(self.splittable_nodes) == 0:
             raise StopIteration("No more splittable nodes")
@@ -127,15 +129,22 @@ class TreeGrower:
             self._finalize_splittable_nodes()
 
         else:
-            self._consider_splittability(left_child_node)
-            self._consider_splittability(right_child_node)
+            self._compute_spittability(left_child_node)
+            self._compute_spittability(right_child_node)
         return left_child_node, right_child_node
 
     def can_split_further(self):
         return len(self.splittable_nodes) >= 1
 
     def _finalize_leaf(self, node):
-        # TODO: store preduction score on the node
+        """Compute the prediction value that minimizes the objective function
+
+        See Equation 5 of:
+        XGBoost: A Scalable Tree Boosting System, T. Chen, C. Guestrin, 2016
+        https://arxiv.org/abs/1603.02754
+        """
+        node.weight = self.shrinkage * node.sum_gradients / (
+            node.sum_hessians + self.splitter.l2_regularization)
         self.finalized_leaves.append(node)
 
     def _finalize_splittable_nodes(self):

@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from pytest import approx
 
 from pygbm.grower import TreeGrower
 
@@ -20,17 +21,20 @@ def _check_children_consistency(parent, left, right):
             == set())
 
 
-@pytest.mark.parametrize('n_bins, constant_hessian, stopping_param', [
-    (11, True, "min_gain_to_split"),
-    (11, False, "min_gain_to_split"),
-    (11, True, "max_leaf_nodes"),
-    (11, False, "max_leaf_nodes"),
-    (42, True, "max_leaf_nodes"),
-    (42, False, "max_leaf_nodes"),
-    (256, True, "min_gain_to_split"),
-    (256, True, "max_leaf_nodes"),
-])
-def test_grow_tree(n_bins, constant_hessian, stopping_param):
+@pytest.mark.parametrize(
+    'n_bins, constant_hessian, stopping_param, shrinkage',
+    [
+        (11, True, "min_gain_to_split", 0.5),
+        (11, False, "min_gain_to_split", 1.),
+        (11, True, "max_leaf_nodes", 1.),
+        (11, False, "max_leaf_nodes", 0.1),
+        (42, True, "max_leaf_nodes", 0.01),
+        (42, False, "max_leaf_nodes", 1.),
+        (256, True, "min_gain_to_split", 1.),
+        (256, True, "max_leaf_nodes", 0.1),
+    ]
+)
+def test_grow_tree(n_bins, constant_hessian, stopping_param, shrinkage):
     rng = np.random.RandomState(42)
     n_samples = 10000
 
@@ -72,7 +76,7 @@ def test_grow_tree(n_bins, constant_hessian, stopping_param):
         stopping_param = {"min_gain_to_split": 0.01}
 
     grower = TreeGrower(features_data, all_gradients, all_hessians,
-                        n_bins=n_bins, **stopping_param)
+                        n_bins=n_bins, shrinkage=shrinkage, **stopping_param)
 
     # The root node is not yet splitted, but the best possible split has
     # already been evaluated:
@@ -121,4 +125,7 @@ def test_grow_tree(n_bins, constant_hessian, stopping_param):
     # All the leafs are pure, it is not possible to split any further:
     assert not grower.can_split_further()
 
-    # TODO: check predicted values on all leafs
+    # Check the values of the leaves:
+    assert grower.root.left_child.weight == approx(-shrinkage)
+    assert grower.root.right_child.left_child.weight == approx(-shrinkage)
+    assert grower.root.right_child.right_child.weight == approx(shrinkage)
