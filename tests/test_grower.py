@@ -5,36 +5,7 @@ from pytest import approx
 from pygbm.grower import TreeGrower
 
 
-def _check_children_consistency(parent, left, right):
-    assert parent.left_child is left
-    assert parent.right_child is right
-
-    # each sample from the parent is propagated to one of the two children
-    assert (len(left.sample_indices) + len(right.sample_indices)
-            == len(parent.sample_indices))
-
-    assert (set(left.sample_indices).union(set(right.sample_indices))
-            == set(parent.sample_indices))
-
-    # samples are sent either to the left or the right node, never to both
-    assert (set(left.sample_indices).intersection(set(right.sample_indices))
-            == set())
-
-
-@pytest.mark.parametrize(
-    'n_bins, constant_hessian, stopping_param, shrinkage',
-    [
-        (11, True, "min_gain_to_split", 0.5),
-        (11, False, "min_gain_to_split", 1.),
-        (11, True, "max_leaf_nodes", 1.),
-        (11, False, "max_leaf_nodes", 0.1),
-        (42, True, "max_leaf_nodes", 0.01),
-        (42, False, "max_leaf_nodes", 1.),
-        (256, True, "min_gain_to_split", 1.),
-        (256, True, "max_leaf_nodes", 0.1),
-    ]
-)
-def test_grow_tree(n_bins, constant_hessian, stopping_param, shrinkage):
+def _make_training_data(n_bins=256, constant_hessian=True):
     rng = np.random.RandomState(42)
     n_samples = 10000
 
@@ -69,6 +40,42 @@ def test_grow_tree(n_bins, constant_hessian, stopping_param, shrinkage):
         all_hessians = np.ones(shape=1, dtype=np.float32)
     else:
         all_hessians = np.ones_like(all_gradients)
+    return features_data, all_gradients, all_hessians
+
+
+def _check_children_consistency(parent, left, right):
+    assert parent.left_child is left
+    assert parent.right_child is right
+
+    # each sample from the parent is propagated to one of the two children
+    assert (len(left.sample_indices) + len(right.sample_indices)
+            == len(parent.sample_indices))
+
+    assert (set(left.sample_indices).union(set(right.sample_indices))
+            == set(parent.sample_indices))
+
+    # samples are sent either to the left or the right node, never to both
+    assert (set(left.sample_indices).intersection(set(right.sample_indices))
+            == set())
+
+
+@pytest.mark.parametrize(
+    'n_bins, constant_hessian, stopping_param, shrinkage',
+    [
+        (11, True, "min_gain_to_split", 0.5),
+        (11, False, "min_gain_to_split", 1.),
+        (11, True, "max_leaf_nodes", 1.),
+        (11, False, "max_leaf_nodes", 0.1),
+        (42, True, "max_leaf_nodes", 0.01),
+        (42, False, "max_leaf_nodes", 1.),
+        (256, True, "min_gain_to_split", 1.),
+        (256, True, "max_leaf_nodes", 0.1),
+    ]
+)
+def test_grow_tree(n_bins, constant_hessian, stopping_param, shrinkage):
+    features_data, all_gradients, all_hessians = _make_training_data(
+        n_bins=n_bins, constant_hessian=constant_hessian)
+    n_samples = features_data.shape[0]
 
     if stopping_param == "max_leaf_nodes":
         stopping_param = {"max_leaf_nodes": 3}
@@ -129,3 +136,36 @@ def test_grow_tree(n_bins, constant_hessian, stopping_param, shrinkage):
     assert grower.root.left_child.weight == approx(-shrinkage)
     assert grower.root.right_child.left_child.weight == approx(-shrinkage)
     assert grower.root.right_child.right_child.weight == approx(shrinkage)
+
+
+def test_predictor_from_grower():
+    # Build a tree on the toy 3-leaf dataset to extract the predictor.
+    n_bins = 256
+    features_data, all_gradients, all_hessians = _make_training_data(
+        n_bins=n_bins)
+    grower = TreeGrower(features_data, all_gradients, all_hessians,
+                        n_bins=n_bins, shrinkage=1., max_leaf_nodes=3)
+    grower.grow()
+    assert grower.n_nodes == 5  # (2 decision nodes + 3 leaves)
+
+    # Check that the node structure can be converted into a predictor
+    # object to perform predictions at scale
+    predictor = grower.make_predictor()
+    assert predictor.nodes.shape[0] == 5
+    assert predictor.nodes['is_leaf'].sum() == 3
+
+    def predict(features):
+        return predictor.predict_one_binned(np.array(features, dtype=np.uint8))
+
+    # Probe some predictions for each leaf of the tree
+    assert predict([0, 0]) == approx(-1)
+    assert predict([42, 99]) == approx(-1)
+    assert predict([128, 255]) == approx(-1)
+
+    assert predict([129, 0]) == approx(-1)
+    assert predict([129, 85]) == approx(-1)
+    assert predict([255, 85]) == approx(-1)
+
+    assert predict([129, 86]) == approx(1)
+    assert predict([129, 255]) == approx(1)
+    assert predict([242, 100]) == approx(1)

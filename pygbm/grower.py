@@ -3,6 +3,7 @@ from heapq import heappush, heappop
 import numpy as np
 
 from .splitting import HistogramSplitter
+from .predictor import TreePredictor, PREDICTOR_RECORD_DTYPE
 
 
 class TreeNode:
@@ -68,6 +69,7 @@ class TreeGrower:
         self.splittable_nodes = []
         self.finalized_leaves = []
         self._intilialize_root()
+        self.n_nodes = 1
 
     def grow(self):
         while self.can_split_further():
@@ -118,6 +120,8 @@ class TreeGrower:
                                     node.split_info.gradient_right,
                                     node.split_info.hessian_right)
         node.right_child = right_child_node
+        self.n_nodes += 2
+
         if self.max_depth is not None and depth == self.max_depth:
             self._finalize_leaf(left_child_node)
             self._finalize_leaf(right_child_node)
@@ -151,3 +155,33 @@ class TreeGrower:
         while len(self.splittable_nodes) > 0:
             node = self.splittable_nodes.pop()
             self._finalize_leaf(node)
+
+    def make_predictor(self):
+        predictor_nodes = np.zeros(self.n_nodes, dtype=PREDICTOR_RECORD_DTYPE)
+        self._fill_predictor_node_array(predictor_nodes, self.root)
+        return TreePredictor(predictor_nodes)
+
+    def _fill_predictor_node_array(self, predictor_nodes, grower_node,
+                                   next_free_idx=0):
+        node = predictor_nodes[next_free_idx]
+        if grower_node.weight is not None:
+            # Leaf node
+            node['weight'] = grower_node.weight
+            node['is_leaf'] = True
+            return next_free_idx + 1
+        else:
+            # Decision node
+            split_info = grower_node.split_info
+            node['feature_idx'] = split_info.feature_idx
+            node['bin_threshold'] = split_info.bin_idx
+            next_free_idx += 1
+
+            node['left'] = next_free_idx
+            next_free_idx = self._fill_predictor_node_array(
+                predictor_nodes, grower_node.left_child,
+                next_free_idx=next_free_idx)
+
+            node['right'] = next_free_idx
+            return self._fill_predictor_node_array(
+                predictor_nodes, grower_node.right_child,
+                next_free_idx=next_free_idx)
