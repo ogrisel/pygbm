@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.testing import assert_allclose
 import pytest
 from pytest import approx
 
@@ -169,3 +170,7 @@ def test_predictor_from_grower():
     assert predict([129, 86]) == approx(1)
     assert predict([129, 255]) == approx(1)
     assert predict([242, 100]) == approx(1)
+
+    # Check that training set can be recovered exactly:
+    predictions = predictor.predict_binned(features_data)
+    assert_allclose(predictions, all_gradients)

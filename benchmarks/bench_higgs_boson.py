@@ -74,3 +74,25 @@ while grower.can_split_further():
     print(f"done in {toc - tic:0.3f}s")
 
 print(f"{len(grower.finalized_leaves)} leaves in {time() - tree_start:0.3f}s")
+
+
+predictor = grower.make_predictor()
+binned_features_c = np.ascontiguousarray(binned_features)
+print("Compiling predictor code...")
+tic = time()
+predictor.predict_binned(np.asfortranarray(binned_features[:10]))
+predictor.predict_binned(binned_features_c[:10])
+toc = time()
+print(f"done in {toc - tic:0.3f}s")
+
+print("Computing predictions (F-contiguous binned data)...")
+tic = time()
+scores = predictor.predict_binned(binned_features)
+toc = time()
+print(f"done in {toc - tic:0.3f}s")
+
+print("Computing predictions (C-contiguous binned data)...")
+tic = time()
+scores_c = predictor.predict_binned(binned_features_c)
+toc = time()
+print(f"done in {toc - tic:0.3f}s")
