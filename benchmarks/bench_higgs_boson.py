@@ -48,6 +48,13 @@ n_samples, n_features = binned_features.shape
 gradients = target
 hessians = np.ones(1, dtype=np.float32)
 
+print("Compiling grower code...")
+tic = time()
+TreeGrower(np.asfortranarray(binned_features[:5]), gradients[:5], hessians[:5],
+           n_bins=n_bins, max_leaf_nodes=3).grow()
+toc = time()
+print(f"done in {toc - tic:0.3f}s")
+
 print(f"Growing one tree on {binned_features.nbytes / 1e9:0.1f} GB of "
       f"binned data ({n_samples:.0e} samples, {n_features} features).")
 print("Finding the best split on the root node...")

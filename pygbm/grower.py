@@ -66,6 +66,10 @@ class TreeGrower:
         self.finalized_leaves = []
         self._intilialize_root()
 
+    def grow(self):
+        while self.can_split_further():
+            self.split_next()
+
     def _intilialize_root(self):
         n_samples = self.features_data.shape[0]
         depth = 0
