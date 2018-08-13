@@ -18,6 +18,13 @@ data = make_data(n_samples=int(1e8), n_features=5, seed=42, dtype=np.float32)
 print("Extracting bins from subsample of data...")
 bins = find_bins(data, random_state=0)
 
+print("Compiling map_to_bins...")
+tic = time()
+binned = map_to_bins(np.asfortranarray(data[:5]), bins)
+toc = time()
+duration = toc - tic
+print(f"done in {duration:0.3f}s")
+
 print("Mapping data to integer bins...")
 tic = time()
 binned = map_to_bins(data, bins)

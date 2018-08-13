@@ -1,17 +1,14 @@
 import numpy as np
-from numba import njit, from_dtype, u1, u4, f4
-
+from numba import njit
 
 HISTOGRAM_DTYPE = np.dtype([
     ('sum_gradients', np.float32),
     ('sum_hessians', np.float32),
     ('count', np.uint32),
 ])
-HISTOGRAM_NUMBA_TYPE = from_dtype(HISTOGRAM_DTYPE)[::1]
 
 
-@njit(HISTOGRAM_NUMBA_TYPE(u4, u4[::1], u1[::1], f4[::1], f4[::1]),
-      fastmath=True)
+@njit
 def _build_ghc_histogram_naive(n_bins, sample_indices, binned_feature,
                                ordered_gradients, ordered_hessians):
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
@@ -23,8 +20,7 @@ def _build_ghc_histogram_naive(n_bins, sample_indices, binned_feature,
     return histogram
 
 
-@njit(HISTOGRAM_NUMBA_TYPE(u4, u4[::1], u1[::1], f4[::1], f4[::1]),
-      fastmath=True)
+@njit
 def _build_ghc_histogram_unrolled(n_bins, sample_indices, binned_feature,
                                   ordered_gradients, ordered_hessians):
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
@@ -61,8 +57,7 @@ def _build_ghc_histogram_unrolled(n_bins, sample_indices, binned_feature,
     return histogram
 
 
-@njit(HISTOGRAM_NUMBA_TYPE(u4, u4[::1], u1[::1], f4[::1]),
-      fastmath=True)
+@njit
 def _build_gc_histogram_unrolled(n_bins, sample_indices, binned_feature,
                                  ordered_gradients):
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
@@ -93,8 +88,7 @@ def _build_gc_histogram_unrolled(n_bins, sample_indices, binned_feature,
     return histogram
 
 
-@njit(HISTOGRAM_NUMBA_TYPE(u4, u1[::1], f4[::1]),
-      fastmath=True)
+@njit
 def _build_gc_root_histogram_unrolled(n_bins, binned_feature, all_gradients):
     """Special case for the root node
 
@@ -130,8 +124,7 @@ def _build_gc_root_histogram_unrolled(n_bins, binned_feature, all_gradients):
     return histogram
 
 
-@njit(HISTOGRAM_NUMBA_TYPE(u4, u1[::1], f4[::1], f4[::1]),
-      fastmath=True)
+@njit
 def _build_ghc_root_histogram_unrolled(n_bins, binned_feature, all_gradients,
                                        all_hessians):
     """Special case for the root node

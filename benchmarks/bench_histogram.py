@@ -33,6 +33,15 @@ n_subsamples = sample_indices.shape[0]
 n_samples = binned_feature.shape[0]
 
 for func in [_build_ghc_histogram_naive, _build_ghc_histogram_unrolled]:
+    print(f"Compiling {func.__name__}...")
+    tic = time()
+    func(256, sample_indices[:3], binned_feature, gradients, hessians)
+    toc = time()
+    duration = toc - tic
+    print(f"done in {duration:.3f}s")
+
+
+for func in [_build_ghc_histogram_naive, _build_ghc_histogram_unrolled]:
     print(f"{func.__name__} on {n_subsamples:.0e} values of {n_samples:.0e}")
     tic = time()
     func(256, sample_indices, binned_feature, gradients, hessians)

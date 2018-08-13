@@ -1,6 +1,5 @@
 import numpy as np
 from numba import njit, prange
-from numba import void, f4, u1
 from sklearn.utils import check_random_state
 
 
@@ -68,9 +67,7 @@ def map_to_bins(data, binning_thresholds=None, out=None):
     return binned
 
 
-@njit(void(f4[::1], f4[::1], u1[::1]),
-      locals={'left': u1, 'right': u1, 'middle': u1},
-      parallel=True)
+@njit(parallel=True)
 def _map_num_col_to_bins(data, binning_thresholds, binned):
     """Binary search to the find the bin index for each value in data."""
     for i in prange(data.shape[0]):
