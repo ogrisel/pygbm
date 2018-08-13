@@ -85,14 +85,17 @@ predictor.predict_binned(binned_features_c[:10])
 toc = time()
 print(f"done in {toc - tic:0.3f}s")
 
+data_size = binned_features.nbytes
 print("Computing predictions (F-contiguous binned data)...")
 tic = time()
 scores = predictor.predict_binned(binned_features)
 toc = time()
-print(f"done in {toc - tic:0.3f}s")
+duration = toc - tic
+print(f"done in {duration:.3f}s ({data_size / duration / 1e9:.3} GB/s)")
 
 print("Computing predictions (C-contiguous binned data)...")
 tic = time()
 scores_c = predictor.predict_binned(binned_features_c)
 toc = time()
-print(f"done in {toc - tic:0.3f}s")
+duration = toc - tic
+print(f"done in {duration:.3f}s ({data_size / duration / 1e9:.3} GB/s)")
