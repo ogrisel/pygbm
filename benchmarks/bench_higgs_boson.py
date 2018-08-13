@@ -3,6 +3,7 @@ import os
 from gzip import GzipFile
 from time import time
 import numpy as np
+from numpy.testing import assert_allclose
 import pandas as pd
 from joblib import Memory
 from pygbm.binning import find_bins, map_to_bins
@@ -31,7 +32,7 @@ def load_data(n_bins):
     print(f"Loaded {df.values.nbytes / 1e9:0.3f} GB in {toc - tic:0.3f}s")
 
     target = df.values[:, 0]
-    data = np.ascontiguousarray(df.values[:, 1:])  # TODO: lift requirement
+    data = np.ascontiguousarray(df.values[:, 1:])
     print("Binning features...")
     tic = time()
     bin_thresholds = find_bins(data, n_bins=n_bins)
@@ -39,11 +40,11 @@ def load_data(n_bins):
     toc = time()
     print(f"Binned {data.nbytes / 1e9:.3f} GB in {toc - tic:0.3f}s")
     print(f"Resulting data size: {binned_features.nbytes / 1e9} GB")
-    return df, binned_features, target
+    return df, data, bin_thresholds, binned_features, target
 
 
 n_bins = 256
-df, binned_features, target = load_data(n_bins)
+df, data, bin_thresholds, binned_features, target = load_data(n_bins)
 n_samples, n_features = binned_features.shape
 gradients = target
 hessians = np.ones(1, dtype=np.float32)
@@ -76,26 +77,39 @@ while grower.can_split_further():
 print(f"{len(grower.finalized_leaves)} leaves in {time() - tree_start:0.3f}s")
 
 
-predictor = grower.make_predictor()
+predictor = grower.make_predictor(bin_thresholds=bin_thresholds)
 binned_features_c = np.ascontiguousarray(binned_features)
 print("Compiling predictor code...")
 tic = time()
 predictor.predict_binned(np.asfortranarray(binned_features[:10]))
 predictor.predict_binned(binned_features_c[:10])
+predictor.predict(data[:10])
 toc = time()
 print(f"done in {toc - tic:0.3f}s")
 
 data_size = binned_features.nbytes
 print("Computing predictions (F-contiguous binned data)...")
 tic = time()
-scores = predictor.predict_binned(binned_features)
+scores_binned_f = predictor.predict_binned(binned_features)
 toc = time()
 duration = toc - tic
 print(f"done in {duration:.3f}s ({data_size / duration / 1e9:.3} GB/s)")
 
 print("Computing predictions (C-contiguous binned data)...")
 tic = time()
-scores_c = predictor.predict_binned(binned_features_c)
+scores_binned_c = predictor.predict_binned(binned_features_c)
 toc = time()
 duration = toc - tic
 print(f"done in {duration:.3f}s ({data_size / duration / 1e9:.3} GB/s)")
+
+assert_allclose(scores_binned_f, scores_binned_f)
+
+print("Computing predictions (C-contiguous numerical data)...")
+data_size = data.nbytes
+tic = time()
+scores_data = predictor.predict(data)
+toc = time()
+duration = toc - tic
+print(f"done in {duration:.3f}s ({data_size / duration / 1e9:.3} GB/s)")
+
+assert_allclose(scores_data, scores_binned_c)

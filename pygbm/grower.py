@@ -156,13 +156,14 @@ class TreeGrower:
             node = self.splittable_nodes.pop()
             self._finalize_leaf(node)
 
-    def make_predictor(self):
+    def make_predictor(self, bin_thresholds=None):
         predictor_nodes = np.zeros(self.n_nodes, dtype=PREDICTOR_RECORD_DTYPE)
-        self._fill_predictor_node_array(predictor_nodes, self.root)
+        self._fill_predictor_node_array(predictor_nodes, self.root,
+                                        bin_thresholds=bin_thresholds)
         return TreePredictor(predictor_nodes)
 
     def _fill_predictor_node_array(self, predictor_nodes, grower_node,
-                                   next_free_idx=0):
+                                   bin_thresholds=None, next_free_idx=0):
         node = predictor_nodes[next_free_idx]
         if grower_node.weight is not None:
             # Leaf node
@@ -172,16 +173,20 @@ class TreeGrower:
         else:
             # Decision node
             split_info = grower_node.split_info
-            node['feature_idx'] = split_info.feature_idx
-            node['bin_threshold'] = split_info.bin_idx
+            feature_idx, bin_idx = split_info.feature_idx, split_info.bin_idx
+            node['feature_idx'] = feature_idx
+            node['bin_threshold'] = bin_idx
+            if bin_thresholds is not None:
+                threshold = bin_thresholds[feature_idx, bin_idx]
+                node['num_feature_threshold'] = threshold
             next_free_idx += 1
 
             node['left'] = next_free_idx
             next_free_idx = self._fill_predictor_node_array(
                 predictor_nodes, grower_node.left_child,
-                next_free_idx=next_free_idx)
+                bin_thresholds=bin_thresholds, next_free_idx=next_free_idx)
 
             node['right'] = next_free_idx
             return self._fill_predictor_node_array(
                 predictor_nodes, grower_node.right_child,
-                next_free_idx=next_free_idx)
+                bin_thresholds=bin_thresholds, next_free_idx=next_free_idx)

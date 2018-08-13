@@ -1,8 +1,12 @@
 import numpy as np
+from sklearn.datasets import load_boston
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score
 from numpy.testing import assert_allclose
 import pytest
 from pytest import approx
 
+from pygbm.binning import BinMapper
 from pygbm.grower import TreeGrower
 
 
@@ -159,18 +163,52 @@ def test_predictor_from_grower():
         return predictor.predict_one_binned(np.array(features, dtype=np.uint8))
 
     # Probe some predictions for each leaf of the tree
-    assert predict([0, 0]) == approx(-1)
-    assert predict([42, 99]) == approx(-1)
-    assert predict([128, 255]) == approx(-1)
+    input_data = np.array([
+        [0, 0],
+        [42, 99],
+        [128, 255],
 
-    assert predict([129, 0]) == approx(-1)
-    assert predict([129, 85]) == approx(-1)
-    assert predict([255, 85]) == approx(-1)
+        [129, 0],
+        [129, 85],
+        [255, 85],
 
-    assert predict([129, 86]) == approx(1)
-    assert predict([129, 255]) == approx(1)
-    assert predict([242, 100]) == approx(1)
+        [129, 86],
+        [129, 255],
+        [242, 100],
+    ], dtype=np.uint8)
+    predictions = predictor.predict_binned(input_data)
+    expected_targets = [-1, -1, -1, -1, -1, -1, 1, 1, 1]
+    assert_allclose(predictions, expected_targets)
 
     # Check that training set can be recovered exactly:
     predictions = predictor.predict_binned(features_data)
     assert_allclose(predictions, all_gradients)
+
+
+def test_boston_dataset():
+    boston = load_boston()
+    X_train, X_test, y_train, y_test = train_test_split(
+        boston.data, boston.target, random_state=42)
+
+    mapper = BinMapper(random_state=42)
+    X_train_binned = mapper.fit_transform(X_train)
+    X_test_binned = mapper.transform(X_test)
+
+    gradients = y_train.astype(np.float32)
+    hessians = np.ones(1, dtype=np.float32)
+
+    grower = TreeGrower(X_train_binned, gradients, hessians, max_leaf_nodes=31)
+    grower.grow()
+    predictor = grower.make_predictor(bin_thresholds=mapper.bin_thresholds_)
+
+    assert r2_score(y_train, predictor.predict_binned(X_train_binned)) > 0.9
+    assert r2_score(y_test, predictor.predict_binned(X_test_binned)) > 0.65
+
+    assert_allclose(predictor.predict(X_train),
+                    predictor.predict_binned(X_train_binned))
+
+    assert_allclose(predictor.predict(X_test),
+                    predictor.predict_binned(X_test_binned))
+
+    assert r2_score(y_train, predictor.predict(X_train)) > 0.9
+    assert r2_score(y_test, predictor.predict(X_test)) > 0.65

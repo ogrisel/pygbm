@@ -1,6 +1,7 @@
 import numpy as np
 from numba import njit, prange
-from sklearn.utils import check_random_state
+from sklearn.utils import check_random_state, check_array
+from sklearn.base import BaseEstimator, TransformerMixin
 
 
 def find_bins(data, n_bins=256, subsample=int(1e5), random_state=None):
@@ -80,3 +81,21 @@ def _map_num_col_to_bins(data, binning_thresholds, binned):
             else:
                 left = middle + 1
         binned[i] = left
+
+
+class BinMapper(BaseEstimator, TransformerMixin):
+
+    def __init__(self, n_bins=256, subsample=int(1e5), random_state=None):
+        self.n_bins = n_bins
+        self.subsample = subsample
+        self.random_state = random_state
+
+    def fit(self, X, y=None):
+        X = check_array(X)
+        self.bin_thresholds_ = find_bins(
+            X, self.n_bins, subsample=self.subsample,
+            random_state=self.random_state)
+        return self
+
+    def transform(self, X):
+        return map_to_bins(X, binning_thresholds=self.bin_thresholds_)
