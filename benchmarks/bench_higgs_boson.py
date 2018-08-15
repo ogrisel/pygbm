@@ -3,11 +3,9 @@ import os
 from gzip import GzipFile
 from time import time
 import numpy as np
-from numpy.testing import assert_allclose
 import pandas as pd
 from joblib import Memory
-from pygbm.binning import find_bins, map_to_bins
-from pygbm.grower import TreeGrower
+from pygbm.gradient_boosting import GradientBoostingMachine
 
 
 HERE = os.path.dirname(__file__)
@@ -30,86 +28,18 @@ def load_data(n_bins):
         df = pd.read_csv(f, header=None, dtype=np.float32)
     toc = time()
     print(f"Loaded {df.values.nbytes / 1e9:0.3f} GB in {toc - tic:0.3f}s")
-
-    target = df.values[:, 0]
-    data = np.ascontiguousarray(df.values[:, 1:])
-    print("Binning features...")
-    tic = time()
-    bin_thresholds = find_bins(data, n_bins=n_bins)
-    binned_features = map_to_bins(data, bin_thresholds)
-    toc = time()
-    print(f"Binned {data.nbytes / 1e9:.3f} GB in {toc - tic:0.3f}s")
-    print(f"Resulting data size: {binned_features.nbytes / 1e9} GB")
-    return df, data, bin_thresholds, binned_features, target
+    return df
 
 
 n_bins = 256
-df, data, bin_thresholds, binned_features, target = load_data(n_bins)
-n_samples, n_features = binned_features.shape
+df = load_data(n_bins)
+target = df.values[:, 0]
+data = np.ascontiguousarray(df.values[:, 1:])
+
+n_samples, n_features = data.shape
 gradients = target
 hessians = np.ones(1, dtype=np.float32)
 
-print("Compiling grower code...")
-tic = time()
-TreeGrower(np.asfortranarray(binned_features[:5]), gradients[:5], hessians[:5],
-           n_bins=n_bins, max_leaf_nodes=3).grow()
-toc = time()
-print(f"done in {toc - tic:0.3f}s")
-
-print(f"Growing one tree on {binned_features.nbytes / 1e9:0.1f} GB of "
-      f"binned data ({n_samples:.0e} samples, {n_features} features).")
-print("Finding the best split on the root node...")
-tree_start = tic = time()
-grower = TreeGrower(binned_features, gradients, hessians, n_bins=n_bins,
-                    max_leaf_nodes=255)
-toc = time()
-print(f"done in {toc - tic:0.3f}s")
-
-while grower.can_split_further():
-    print("Splitting next node...")
-    tic = time()
-    left, right = grower.split_next()
-    toc = time()
-    print("left node: ", left)
-    print("right node: ", right)
-    print(f"done in {toc - tic:0.3f}s")
-
-print(f"{len(grower.finalized_leaves)} leaves in {time() - tree_start:0.3f}s")
-
-
-predictor = grower.make_predictor(bin_thresholds=bin_thresholds)
-binned_features_c = np.ascontiguousarray(binned_features)
-print("Compiling predictor code...")
-tic = time()
-predictor.predict_binned(np.asfortranarray(binned_features[:10]))
-predictor.predict_binned(binned_features_c[:10])
-predictor.predict(data[:10])
-toc = time()
-print(f"done in {toc - tic:0.3f}s")
-
-data_size = binned_features.nbytes
-print("Computing predictions (F-contiguous binned data)...")
-tic = time()
-scores_binned_f = predictor.predict_binned(binned_features)
-toc = time()
-duration = toc - tic
-print(f"done in {duration:.3f}s ({data_size / duration / 1e9:.3} GB/s)")
-
-print("Computing predictions (C-contiguous binned data)...")
-tic = time()
-scores_binned_c = predictor.predict_binned(binned_features_c)
-toc = time()
-duration = toc - tic
-print(f"done in {duration:.3f}s ({data_size / duration / 1e9:.3} GB/s)")
-
-assert_allclose(scores_binned_f, scores_binned_f)
-
-print("Computing predictions (C-contiguous numerical data)...")
-data_size = data.nbytes
-tic = time()
-scores_data = predictor.predict(data)
-toc = time()
-duration = toc - tic
-print(f"done in {duration:.3f}s ({data_size / duration / 1e9:.3} GB/s)")
-
-assert_allclose(scores_data, scores_binned_c)
+model = GradientBoostingMachine(learning_rate=0.5, max_iter=100, n_bins=n_bins,
+                                random_state=42, scoring='roc_auc', verbose=1)
+model.fit(data, target)
