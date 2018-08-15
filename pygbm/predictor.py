@@ -21,6 +21,9 @@ class TreePredictor:
     def __init__(self, nodes):
         self.nodes = nodes
 
+    def get_n_leaf_nodes(self):
+        return self.nodes['is_leaf'].sum()
+
     def predict_binned(self, binned_features, out=None):
         if out is None:
             out = np.empty(binned_features.shape[0], dtype=np.float32)
