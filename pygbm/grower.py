@@ -85,15 +85,17 @@ class TreeGrower:
         if (self.max_leaf_nodes is not None and self.max_leaf_nodes == 1):
             self._finalize_leaf(self.root)
             return
-        self._compute_spittability(self.root)
+        self._compute_spittability([self.root])
 
-    def _compute_spittability(self, node):
-        split_info = self.splitter.find_node_split(node.sample_indices)
-        node.split_info = split_info
-        if split_info.gain < self.min_gain_to_split:
-            self._finalize_leaf(node)
-        else:
-            heappush(self.splittable_nodes, node)
+    def _compute_spittability(self, nodes):
+        split_infos = self.splitter.find_node_splits(
+            [node.sample_indices for node in nodes])
+        for split_info, node in zip(split_infos, nodes):
+            node.split_info = split_info
+            if split_info.gain < self.min_gain_to_split:
+                self._finalize_leaf(node)
+            else:
+                heappush(self.splittable_nodes, node)
 
     def split_next(self):
         """Split the node with highest potential gain.
@@ -134,16 +136,19 @@ class TreeGrower:
             self._finalize_splittable_nodes()
 
         else:
+            nodes_to_evaluate = []
             if (self.min_samples_leaf is not None
                     and len(sample_indices_left) < self.min_samples_leaf):
                 self._finalize_leaf(left_child_node)
             else:
-                self._compute_spittability(left_child_node)
+                nodes_to_evaluate.append(left_child_node)
             if (self.min_samples_leaf is not None
                     and len(sample_indices_right) < self.min_samples_leaf):
                 self._finalize_leaf(right_child_node)
             else:
-                self._compute_spittability(right_child_node)
+                nodes_to_evaluate.append(right_child_node)
+            if len(nodes_to_evaluate) >= 1:
+                self._compute_spittability(nodes_to_evaluate)
         return left_child_node, right_child_node
 
     def can_split_further(self):

@@ -1,4 +1,4 @@
-# from collections import namedtuple
+from operator import attrgetter
 import numpy as np
 from numba import njit, jitclass, prange, float32, uint8, uint32
 from .histogram import _build_ghc_histogram_unrolled
@@ -30,19 +30,21 @@ class SplitInfo:
 
 
 @njit(parallel=True)
-def _parallel_find_splits(sample_indices, ordered_gradients, ordered_hessians,
-                          n_features, binned_features, n_bins,
+def _parallel_find_splits(node_infos, n_features, binned_features, n_bins,
                           l2_regularization, min_hessian_to_split):
     # Pre-allocate the results datastructure to be able to use prange
-    split_infos = [SplitInfo(0, 0, 0, 0., 0., 0., 0.)
-                   for i in range(n_features)]
-    for feature_idx in prange(n_features):
+    split_infos = [[SplitInfo(0, 0, 0, 0., 0., 0., 0.)
+                    for j in range(n_features)]
+                   for i in range(len(node_infos))]
+    for index in prange(n_features * len(node_infos)):
+        i, feature_idx = divmod(index, n_features)
+        sample_indices, ordered_gradients, ordered_hessians = node_infos[i]
         binned_feature = binned_features.T[feature_idx]
         split_info = _find_histogram_split(
             feature_idx, binned_feature, n_bins, sample_indices,
             ordered_gradients, ordered_hessians, l2_regularization,
             min_hessian_to_split)
-        split_infos[feature_idx] = split_info
+        split_infos[i][feature_idx] = split_info
     return split_infos
 
 
@@ -81,16 +83,16 @@ class HistogramSplitter:
         return (np.array(sample_indices_left, dtype=np.uint32),
                 np.array(sample_indices_right, dtype=np.uint32))
 
-    def find_node_split(self, sample_indices):
+    def _prepare_gradient_info(self, sample_indices):
         loss_dtype = self.all_gradients.dtype
-
         if sample_indices.shape[0] == self.all_gradients.shape[0]:
             # Root node: the ordering of sample_indices and all_gradients
             # are expected to be consistent in this case.
             ordered_gradients = self.all_gradients
             ordered_hessians = self.all_hessians
         else:
-            ordered_gradients = np.empty_like(sample_indices, dtype=loss_dtype)
+            ordered_gradients = np.empty_like(
+                sample_indices, dtype=loss_dtype)
             if self.constant_hessian:
                 ordered_hessians = self.all_hessians
                 for i, sample_idx in enumerate(sample_indices):
@@ -101,22 +103,28 @@ class HistogramSplitter:
                 for i, sample_idx in enumerate(sample_indices):
                     ordered_gradients[i] = self.all_gradients[sample_idx]
                     ordered_hessians[i] = self.all_hessians[sample_idx]
+        return sample_indices, ordered_gradients, ordered_hessians
 
-        split_infos = _parallel_find_splits(sample_indices,
-                                            ordered_gradients,
-                                            ordered_hessians,
+    def find_node_splits(self, list_of_sample_indices):
+        node_infos = [self._prepare_gradient_info(sample_indices)
+                      for sample_indices in list_of_sample_indices]
+
+        split_infos = _parallel_find_splits(node_infos,
                                             self.n_features,
                                             self.binned_features,
                                             self.n_bins,
                                             self.l2_regularization,
                                             self.min_hessian_to_split)
-        best_gain = None
-        for split_info in split_infos:
-            gain = split_info.gain
-            if best_gain is None or gain > best_gain:
-                best_gain = gain
-                best_split_info = split_info
-        return best_split_info
+
+        best_split_infos = []
+        for node_split_info in split_infos:
+            best_gain, best_split_info = 0., None
+            for split_info in node_split_info:
+                if best_split_info is None or split_info.gain >= best_gain:
+                    best_split_info = split_info
+                    best_gain = split_info.gain
+            best_split_infos.append(best_split_info)
+        return best_split_infos
 
 
 @njit(fastmath=False)
