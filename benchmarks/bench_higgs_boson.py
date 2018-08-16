@@ -4,9 +4,13 @@ from gzip import GzipFile
 from time import time
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score
 from joblib import Memory
-from pygbm.gradient_boosting import GradientBoostingMachine
-
+from pygbm import GradientBoostingMachine
+# from lightgbm import LGBMClassifier
+# for now as pygbm does not have classifier loss yet:
+from lightgbm import LGBMRegressor
 
 HERE = os.path.dirname(__file__)
 URL = ("https://archive.ics.uci.edu/ml/machine-learning-databases/00280/"
@@ -15,7 +19,7 @@ m = Memory(location='/tmp', mmap_mode='r')
 
 
 @m.cache
-def load_data(n_bins):
+def load_data():
     filename = os.path.join(HERE, URL.rsplit('/', 1)[-1])
     if not os.path.exists(filename):
         print(f"Downloading {URL} to {filename} (2.6 GB)...")
@@ -31,15 +35,44 @@ def load_data(n_bins):
     return df
 
 
-n_bins = 256
-df = load_data(n_bins)
+df = load_data()
 target = df.values[:, 0]
 data = np.ascontiguousarray(df.values[:, 1:])
+data_train, data_test, target_train, target_test = train_test_split(
+    data, target, test_size=50000, random_state=0)
 
-n_samples, n_features = data.shape
-gradients = target
-hessians = np.ones(1, dtype=np.float32)
+n_samples, n_features = data_train.shape
+print(f"Training set with {n_samples} records with {n_features} features.")
 
-model = GradientBoostingMachine(learning_rate=0.5, max_iter=100, n_bins=n_bins,
-                                random_state=42, scoring='roc_auc', verbose=1)
-model.fit(data, target)
+print("Fitting a LightGBM model...")
+tic = time()
+lightgbm_model = LGBMRegressor(n_estimators=10, num_leaves=31, verbose=10)
+lightgbm_model.fit(data_train, target_train)
+toc = time()
+predicted_test = lightgbm_model.predict(data_test)
+roc_auc = roc_auc_score(target_test, predicted_test)
+print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc}")
+
+
+print("JIT compiling code for the pygbm model...")
+tic = time()
+pygbm_model = GradientBoostingMachine(learning_rate=0.1, max_iter=1,
+                                      n_bins=255, max_leaf_nodes=31,
+                                      random_state=0, scoring=None,
+                                      verbose=0, validation_split=None)
+pygbm_model.fit(data_train[:100], target_train[:100])
+toc = time()
+print(f"done in {toc - tic:.3f}s")
+
+
+print("Fitting a pygbm model...")
+tic = time()
+pygbm_model = GradientBoostingMachine(learning_rate=0.1, max_iter=10,
+                                      n_bins=255, max_leaf_nodes=31,
+                                      random_state=0, scoring=None,
+                                      verbose=1, validation_split=None)
+pygbm_model.fit(data_train, target_train)
+toc = time()
+predicted_test = pygbm_model.predict(data_test)
+roc_auc = roc_auc_score(target_test, predicted_test)
+print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc}")

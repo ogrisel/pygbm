@@ -4,7 +4,7 @@ from sklearn.utils import check_random_state, check_array
 from sklearn.base import BaseEstimator, TransformerMixin
 
 
-def find_bins(data, n_bins=256, subsample=int(1e5), random_state=None):
+def find_bins(data, n_bins=256, subsample=int(2e5), random_state=None):
     """Extract feature-wise equally-spaced quantiles from numerical data
 
     Subsample the dataset if too large as the feature-wise quantiles
