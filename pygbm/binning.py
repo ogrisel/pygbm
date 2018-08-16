@@ -61,9 +61,8 @@ def map_to_bins(data, binning_thresholds=None, out=None):
     binning_thresholds = np.ascontiguousarray(binning_thresholds,
                                               dtype=np.float32)
     for feature_idx in range(data.shape[1]):
-        num_col_data = np.ascontiguousarray(data[:, feature_idx],
-                                            dtype=np.float32)
-        _map_num_col_to_bins(num_col_data, binning_thresholds[feature_idx],
+        _map_num_col_to_bins(data[:, feature_idx],
+                             binning_thresholds[feature_idx],
                              binned[:, feature_idx])
     return binned
 
