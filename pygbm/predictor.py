@@ -22,7 +22,7 @@ class TreePredictor:
         self.nodes = nodes
 
     def get_n_leaf_nodes(self):
-        return self.nodes['is_leaf'].sum()
+        return int(self.nodes['is_leaf'].sum())
 
     def predict_binned(self, binned_features, out=None):
         if out is None:
