@@ -71,15 +71,23 @@ class HistogramSplitter:
 
     def split_indices(self, sample_indices, split_info):
         binned_feature = self.binned_features.T[split_info.feature_idx]
-        sample_indices_left, sample_indices_right = [], []
+        left_idx, right_idx = 0, 0
+        sample_indices_left = np.empty_like(sample_indices)
+        sample_indices_right = np.empty_like(sample_indices)
+        # TODO: parallelize this loop by blocks (e.g. 1e6-sized chunks)?
+        # That would involve some overhead with concatenating the blocks at
+        # the end. Alternatively we could make sample_indices a list of numpy
+        # arrays in the grower tree node datastructure to ease
+        # parallelization.
         for sample_idx in sample_indices:
             if binned_feature[sample_idx] <= split_info.bin_idx:
-                sample_indices_left.append(sample_idx)
+                sample_indices_left[left_idx] = sample_idx
+                left_idx += 1
             else:
-                sample_indices_right.append(sample_idx)
+                sample_indices_right[right_idx] = sample_idx
+                right_idx += 1
 
-        return (np.array(sample_indices_left, dtype=np.uint32),
-                np.array(sample_indices_right, dtype=np.uint32))
+        return sample_indices_left[:left_idx], sample_indices_right[:right_idx]
 
     def find_node_split(self, sample_indices):
         loss_dtype = self.all_gradients.dtype
