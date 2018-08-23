@@ -1,0 +1,24 @@
+# General ignore rules
+.*
+*sublime*
+tags
+
+# Python running files
+__pycache__
+*pyc
+*egg*
+*.so
+*.whl
+
+# Profiling runs and numba annotations
+*.prof
+*.html
+perf.data*
+
+# Benchmark data
+*.gz
+
+# Extra files
+/build
+/dist
+/htmlcov
