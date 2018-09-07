@@ -183,7 +183,6 @@ def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
             histogram = _build_ghc_histogram_unrolled(
                 n_bins, sample_indices, binned_feature, ordered_gradients,
                 ordered_hessians)
-
     gradient_left, hessian_left = 0., 0.
     for bin_idx in range(histogram.shape[0]):
         gradient_left += histogram[bin_idx]['sum_gradients']

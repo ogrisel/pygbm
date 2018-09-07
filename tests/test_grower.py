@@ -135,9 +135,9 @@ def test_grow_tree(n_bins, constant_hessian, stopping_param, shrinkage):
     assert not grower.can_split_further()
 
     # Check the values of the leaves:
-    assert grower.root.left_child.weight == approx(-shrinkage)
-    assert grower.root.right_child.left_child.weight == approx(-shrinkage)
-    assert grower.root.right_child.right_child.weight == approx(shrinkage)
+    assert grower.root.left_child.value == approx(-shrinkage)
+    assert grower.root.right_child.left_child.value == approx(-shrinkage)
+    assert grower.root.right_child.right_child.value == approx(shrinkage)
 
 
 def test_predictor_from_grower():

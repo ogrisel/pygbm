@@ -10,7 +10,7 @@ class TreeNode:
     split_info = None  # Result of the split evaluation
     left_child = None  # Link to left node (only for non-leaf nodes)
     right_child = None  # Link to right node (only for non-leaf nodes)
-    weight = None  # Prediction weight (only for leaf nodes)
+    value = None  # Prediction value (only for leaf nodes)
 
     def __init__(self, depth, sample_indices, sum_gradients, sum_hessians):
         self.depth = depth
@@ -156,7 +156,7 @@ class TreeGrower:
         XGBoost: A Scalable Tree Boosting System, T. Chen, C. Guestrin, 2016
         https://arxiv.org/abs/1603.02754
         """
-        node.weight = self.shrinkage * node.sum_gradients / (
+        node.value = self.shrinkage * node.sum_gradients / (
             node.sum_hessians + self.splitter.l2_regularization)
         self.finalized_leaves.append(node)
 
@@ -174,10 +174,11 @@ class TreeGrower:
     def _fill_predictor_node_array(self, predictor_nodes, grower_node,
                                    bin_thresholds=None, next_free_idx=0):
         node = predictor_nodes[next_free_idx]
-        if grower_node.weight is not None:
+        node['count'] = grower_node.sample_indices.shape[0]
+        if grower_node.value is not None:
             # Leaf node
-            node['weight'] = grower_node.weight
             node['is_leaf'] = True
+            node['value'] = grower_node.value
             return next_free_idx + 1
         else:
             # Decision node
@@ -187,7 +188,8 @@ class TreeGrower:
             node['bin_threshold'] = bin_idx
             if bin_thresholds is not None:
                 threshold = bin_thresholds[feature_idx, bin_idx]
-                node['num_feature_threshold'] = threshold
+                node['threshold'] = threshold
+                node['gain'] = split_info.gain
             next_free_idx += 1
 
             node['left'] = next_free_idx

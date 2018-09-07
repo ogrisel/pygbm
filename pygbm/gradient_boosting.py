@@ -82,22 +82,24 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
         gb_start_time = time()
         # TODO: compute training loss and use it for early stopping if no
         # validation data is provided?
-        for n_iter in range(self.max_iter):
-            self.n_iter_ = n_iter
+        self.n_iter_ = 0
+        while True:
             should_stop = self._stopping_criterion(
                 gb_start_time, scorer, X_binned_small_train, y_small_train,
                 X_binned_val, y_val)
-            if should_stop:
+            if should_stop or self.n_iter_ == self.max_iter:
                 break
+            shrinkage = 1. if self.n_iter_ == 0 else self.learning_rate
             grower = TreeGrower(
                 X_binned_train, gradients, hessians, n_bins=self.n_bins,
                 max_leaf_nodes=self.max_leaf_nodes, max_depth=self.max_depth,
                 min_samples_leaf=self.min_samples_leaf,
-                shrinkage=self.learning_rate)
+                shrinkage=shrinkage)
             grower.grow()
             predictor = grower.make_predictor(
                 bin_thresholds=self.bin_mapper_.bin_thresholds_)
             predictors.append(predictor)
+            self.n_iter_ += 1
             gradients -= predictor.predict_binned(X_binned_train)
         if self.verbose:
             duration = time() - fit_start_time
