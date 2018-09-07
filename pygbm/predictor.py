@@ -12,7 +12,6 @@ PREDICTOR_RECORD_DTYPE = np.dtype([
     ('left', np.uint32),
     ('right', np.uint32),
     ('gain', np.float32),
-    # TODO: gain for feature importance?
     # TODO: shrinkage in leaf for feature importance error bar?
 ])
 PREDICTOR_NUMBA_TYPE = from_dtype(PREDICTOR_RECORD_DTYPE)[::1]
