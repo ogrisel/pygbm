@@ -4,7 +4,7 @@ from sklearn.utils import check_random_state, check_array
 from sklearn.base import BaseEstimator, TransformerMixin
 
 
-def find_bins(data, n_bins=256, subsample=int(2e5), random_state=None):
+def find_bins(data, max_bins=255, subsample=int(2e5), random_state=None):
     """Extract feature-wise equally-spaced quantiles from numerical data
 
     Subsample the dataset if too large as the feature-wise quantiles
@@ -15,9 +15,9 @@ def find_bins(data, n_bins=256, subsample=int(2e5), random_state=None):
     data: array-like (n_samples, n_features)
         The numerical dataset to analyse.
 
-    n_bins: int
+    max_bins: int
         The number of bins to extract for each feature. As we code the binned
-        values as 8-bit integers, n_bins should be no larger than 256.
+        values as 8-bit integers, max_bins should be no larger than 256.
 
     subsample: int
         Number of random subsamples to consider to compute the quantiles.
@@ -27,18 +27,18 @@ def find_bins(data, n_bins=256, subsample=int(2e5), random_state=None):
 
     Return
     ------
-    binning_thresholds: array (n_features, n_bins - 1)
+    binning_thresholds: array (n_features, max_bins - 1)
         For each feature, store the increasing numeric values that can
         be used to separate the bins.
     """
-    if n_bins > 256:
-        raise ValueError(f'n_bins should no larger than 256, got {n_bins}')
+    if max_bins > 256:
+        raise ValueError(f'max_bins should no larger than 256, got {max_bins}')
     rng = check_random_state(random_state)
     if data.shape[0] > subsample:
         subset = rng.choice(np.arange(data.shape[0]), subsample)
         data = data[subset]
     data = np.asfortranarray(data, dtype=np.float32)
-    percentiles = np.linspace(0, 100, num=n_bins + 1)[1:-1]
+    percentiles = np.linspace(0, 100, num=max_bins + 1)[1:-1]
     binning_thresholds = np.percentile(data, percentiles, axis=0).T
     return np.ascontiguousarray(binning_thresholds, dtype=data.dtype)
 
@@ -84,15 +84,15 @@ def _map_num_col_to_bins(data, binning_thresholds, binned):
 
 class BinMapper(BaseEstimator, TransformerMixin):
 
-    def __init__(self, n_bins=256, subsample=int(1e5), random_state=None):
-        self.n_bins = n_bins
+    def __init__(self, max_bins=255, subsample=int(1e5), random_state=None):
+        self.max_bins = max_bins
         self.subsample = subsample
         self.random_state = random_state
 
     def fit(self, X, y=None):
         X = check_array(X)
         self.bin_thresholds_ = find_bins(
-            X, self.n_bins, subsample=self.subsample,
+            X, self.max_bins, subsample=self.subsample,
             random_state=self.random_state)
         return self
 

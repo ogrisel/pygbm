@@ -12,16 +12,16 @@ DATA = np.random.RandomState(42).normal(
 
 def test_find_bins_regular_data():
     data = np.linspace(0, 10, 1000).reshape(-1, 1)
-    bin_thresholds = find_bins(data, n_bins=10)
+    bin_thresholds = find_bins(data, max_bins=10)
     assert_allclose(bin_thresholds[0], [1, 2, 3, 4, 5, 6, 7, 8, 9])
 
-    bin_thresholds = find_bins(data, n_bins=5)
+    bin_thresholds = find_bins(data, max_bins=5)
     assert_allclose(bin_thresholds[0], [2, 4, 6, 8])
 
 
 def test_find_bins_random_data():
     bin_thresholds = find_bins(DATA, random_state=0)
-    assert bin_thresholds.shape == (2, 255)
+    assert bin_thresholds.shape == (2, 254)  # 255 (default) - 1
     assert bin_thresholds.dtype == DATA.dtype
 
     assert np.allclose(bin_thresholds[0][[64, 128, 192]],
@@ -32,19 +32,19 @@ def test_find_bins_random_data():
 
 
 def test_find_bins_low_n_bins():
-    bin_thresholds = find_bins(DATA, n_bins=128, random_state=0)
+    bin_thresholds = find_bins(DATA, max_bins=128, random_state=0)
     assert bin_thresholds.shape == (2, 127)
     assert bin_thresholds.dtype == DATA.dtype
 
 
 def test_find_bins_invalid_n_bins():
     with pytest.raises(ValueError):
-        find_bins(DATA, n_bins=1024)
+        find_bins(DATA, max_bins=1024)
 
 
 @pytest.mark.parametrize('n_bins', [16, 128, 256])
 def test_map_to_bins(n_bins):
-    bins = find_bins(DATA, n_bins=n_bins, random_state=0)
+    bins = find_bins(DATA, max_bins=n_bins, random_state=0)
     binned = map_to_bins(DATA, bins)
     assert binned.shape == DATA.shape
     assert binned.dtype == np.uint8
@@ -66,7 +66,7 @@ def test_bin_mapper():
     expected_count_per_bin = n_samples // n_bins
     tol = int(0.01 * expected_count_per_bin)
 
-    mapper = BinMapper(n_bins=n_bins, random_state=42).fit(DATA)
+    mapper = BinMapper(max_bins=n_bins, random_state=42).fit(DATA)
     binned = mapper.transform(DATA)
 
     assert binned.shape == (n_samples, n_features)

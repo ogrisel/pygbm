@@ -16,6 +16,9 @@ HERE = os.path.dirname(__file__)
 URL = ("https://archive.ics.uci.edu/ml/machine-learning-databases/00280/"
        "HIGGS.csv.gz")
 m = Memory(location='/tmp', mmap_mode='r')
+n_leaf_nodes = 2
+n_trees = 1
+subsample = 25000
 
 
 @m.cache
@@ -41,23 +44,28 @@ data = np.ascontiguousarray(df.values[:, 1:])
 data_train, data_test, target_train, target_test = train_test_split(
     data, target, test_size=50000, random_state=0)
 
+if subsample is not None:
+    data_train, target_train = data_train[:subsample], target_train[:subsample]
+
 n_samples, n_features = data_train.shape
 print(f"Training set with {n_samples} records with {n_features} features.")
 
 print("Fitting a LightGBM model...")
 tic = time()
-lightgbm_model = LGBMRegressor(n_estimators=10, num_leaves=31, verbose=10)
+lightgbm_model = LGBMRegressor(n_estimators=n_trees, num_leaves=n_leaf_nodes,
+                               learning_rate=1., verbose=10)
 lightgbm_model.fit(data_train, target_train)
 toc = time()
 predicted_test = lightgbm_model.predict(data_test)
 roc_auc = roc_auc_score(target_test, predicted_test)
 print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc}")
 
+print(lightgbm_model._Booster._save_model_to_string())
 
 print("JIT compiling code for the pygbm model...")
 tic = time()
 pygbm_model = GradientBoostingMachine(learning_rate=0.1, max_iter=1,
-                                      n_bins=255, max_leaf_nodes=31,
+                                      n_bins=255, max_leaf_nodes=n_leaf_nodes,
                                       random_state=0, scoring=None,
                                       verbose=0, validation_split=None)
 pygbm_model.fit(data_train[:100], target_train[:100])
@@ -67,8 +75,8 @@ print(f"done in {toc - tic:.3f}s")
 
 print("Fitting a pygbm model...")
 tic = time()
-pygbm_model = GradientBoostingMachine(learning_rate=0.1, max_iter=10,
-                                      n_bins=255, max_leaf_nodes=31,
+pygbm_model = GradientBoostingMachine(learning_rate=1, max_iter=n_trees,
+                                      n_bins=255, max_leaf_nodes=n_leaf_nodes,
                                       random_state=0, scoring=None,
                                       verbose=1, validation_split=None)
 pygbm_model.fit(data_train, target_train)
@@ -76,3 +84,6 @@ toc = time()
 predicted_test = pygbm_model.predict(data_test)
 roc_auc = roc_auc_score(target_test, predicted_test)
 print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc}")
+
+for predictor in pygbm_model.predictors_:
+    print(predictor.nodes)

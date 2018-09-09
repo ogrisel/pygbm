@@ -13,7 +13,7 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
 
     def __init__(self, learning_rate=0.1, max_iter=100, max_leaf_nodes=31,
                  max_depth=None, min_samples_leaf=20,
-                 l2_regularization=0., n_bins=256,
+                 l2_regularization=0., max_bins=256,
                  max_no_improvement=5, validation_split=0.1, scoring='neg_mse',
                  tol=1e-7, verbose=0, random_state=None):
         self.learning_rate = learning_rate
@@ -22,7 +22,7 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
         self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf
         self.l2_regularization = l2_regularization
-        self.n_bins = n_bins
+        self.max_bins = max_bins
         self.max_no_improvement = max_no_improvement
         self.validation_split = validation_split
         self.scoring = scoring
@@ -41,7 +41,7 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
             print(f"Binning {X.nbytes / 1e9:.3f} GB of data: ", end="",
                   flush=True)
         tic = time()
-        self.bin_mapper_ = BinMapper(n_bins=self.n_bins, random_state=rng)
+        self.bin_mapper_ = BinMapper(max_bins=self.max_bins, random_state=rng)
         X_binned = self.bin_mapper_.fit_transform(X)
         toc = time()
         if self.verbose:
@@ -91,7 +91,7 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
                 break
             shrinkage = 1. if self.n_iter_ == 0 else self.learning_rate
             grower = TreeGrower(
-                X_binned_train, gradients, hessians, n_bins=self.n_bins,
+                X_binned_train, gradients, hessians, max_bins=self.max_bins,
                 max_leaf_nodes=self.max_leaf_nodes, max_depth=self.max_depth,
                 min_samples_leaf=self.min_samples_leaf,
                 shrinkage=shrinkage)
