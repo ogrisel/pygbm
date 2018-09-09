@@ -59,7 +59,7 @@ def test_map_to_bins(n_bins):
         assert binned[max_idx, feature_idx] == n_bins - 1
 
 
-def test_bin_mapper():
+def test_bin_mapper_random_data():
     n_bins = 5
     n_samples, n_features = DATA.shape
 
@@ -80,3 +80,14 @@ def test_bin_mapper():
         for bin_idx in range(n_bins):
             count = (binned[:, feature_idx] == bin_idx).sum()
             assert abs(count - expected_count_per_bin) < tol
+
+
+@pytest.mark.parametrize("n_bins, multiplier", [
+    (5, 1),
+    (5, 3),
+    (255, 42),
+])
+def test_bin_mapper_idem_potence(n_bins, multiplier):
+    data = np.array(list(range(n_bins)) * multiplier).reshape(-1, 1)
+    binned = BinMapper(max_bins=n_bins).fit_transform(data)
+    assert_allclose(data, binned)
