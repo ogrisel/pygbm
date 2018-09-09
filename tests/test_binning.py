@@ -59,12 +59,12 @@ def test_map_to_bins(n_bins):
         assert binned[max_idx, feature_idx] == n_bins - 1
 
 
-def test_bin_mapper_random_data():
-    n_bins = 5
+@pytest.mark.parametrize("n_bins", [5, 10, 42])
+def test_bin_mapper_random_data(n_bins):
     n_samples, n_features = DATA.shape
 
     expected_count_per_bin = n_samples // n_bins
-    tol = int(0.01 * expected_count_per_bin)
+    tol = int(0.05 * expected_count_per_bin)
 
     mapper = BinMapper(max_bins=n_bins, random_state=42).fit(DATA)
     binned = mapper.transform(DATA)
