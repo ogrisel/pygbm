@@ -24,11 +24,11 @@ def test_find_bins_random_data():
     assert bin_thresholds.shape == (2, 254)  # 255 (default) - 1
     assert bin_thresholds.dtype == DATA.dtype
 
-    assert np.allclose(bin_thresholds[0][[64, 128, 192]],
-                       np.array([-0.7, 0.0, 0.7]), atol=1e-1)
+    assert_allclose(bin_thresholds[0][[64, 128, 192]],
+                    np.array([-0.7, 0.0, 0.7]), atol=1e-1)
 
-    assert np.allclose(bin_thresholds[1][[64, 128, 192]],
-                       np.array([9.99, 10.00, 10.01]), atol=1e-2)
+    assert_allclose(bin_thresholds[1][[64, 128, 192]],
+                    np.array([9.99, 10.00, 10.01]), atol=1e-2)
 
 
 def test_find_bins_low_n_bins():
