@@ -27,7 +27,7 @@ def find_bins(data, n_bins=256, subsample=int(2e5), random_state=None):
 
     Return
     ------
-    binning_thresholds: array (n_features, n_bins)
+    binning_thresholds: array (n_features, n_bins - 1)
         For each feature, store the increasing numeric values that can
         be used to separate the bins.
     """
@@ -38,8 +38,8 @@ def find_bins(data, n_bins=256, subsample=int(2e5), random_state=None):
         subset = rng.choice(np.arange(data.shape[0]), subsample)
         data = data[subset]
     data = np.asfortranarray(data, dtype=np.float32)
-    binning_thresholds = np.percentile(data, np.linspace(0, 100, num=n_bins),
-                                       axis=0).T
+    percentiles = np.linspace(0, 100, num=n_bins + 1)[1:-1]
+    binning_thresholds = np.percentile(data, percentiles, axis=0).T
     return np.ascontiguousarray(binning_thresholds, dtype=data.dtype)
 
 
@@ -72,7 +72,7 @@ def _map_num_col_to_bins(data, binning_thresholds, binned):
     """Binary search to the find the bin index for each value in data."""
     for i in prange(data.shape[0]):
         # TODO: add support for missing values (NaN or custom marker)
-        left, right = 0, binning_thresholds.shape[0] - 1
+        left, right = 0, binning_thresholds.shape[0]
         while left < right:
             middle = (right + left - 1) // 2
             if data[i] <= binning_thresholds[middle]:
