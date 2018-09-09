@@ -16,9 +16,10 @@ HERE = os.path.dirname(__file__)
 URL = ("https://archive.ics.uci.edu/ml/machine-learning-databases/00280/"
        "HIGGS.csv.gz")
 m = Memory(location='/tmp', mmap_mode='r')
-n_leaf_nodes = 2
-n_trees = 1
-subsample = 25000
+n_leaf_nodes = 31
+n_trees = 10
+# subsample = 25000
+subsample = None
 
 
 @m.cache
@@ -58,14 +59,15 @@ lightgbm_model.fit(data_train, target_train)
 toc = time()
 predicted_test = lightgbm_model.predict(data_test)
 roc_auc = roc_auc_score(target_test, predicted_test)
-print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc}")
+print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.3f}")
 
-print(lightgbm_model._Booster._save_model_to_string())
+# print(lightgbm_model._Booster._save_model_to_string())
 
 print("JIT compiling code for the pygbm model...")
 tic = time()
 pygbm_model = GradientBoostingMachine(learning_rate=0.1, max_iter=1,
-                                      n_bins=255, max_leaf_nodes=n_leaf_nodes,
+                                      max_bins=255,
+                                      max_leaf_nodes=n_leaf_nodes,
                                       random_state=0, scoring=None,
                                       verbose=0, validation_split=None)
 pygbm_model.fit(data_train[:100], target_train[:100])
@@ -76,14 +78,15 @@ print(f"done in {toc - tic:.3f}s")
 print("Fitting a pygbm model...")
 tic = time()
 pygbm_model = GradientBoostingMachine(learning_rate=1, max_iter=n_trees,
-                                      n_bins=255, max_leaf_nodes=n_leaf_nodes,
+                                      max_bins=255,
+                                      max_leaf_nodes=n_leaf_nodes,
                                       random_state=0, scoring=None,
                                       verbose=1, validation_split=None)
 pygbm_model.fit(data_train, target_train)
 toc = time()
 predicted_test = pygbm_model.predict(data_test)
 roc_auc = roc_auc_score(target_test, predicted_test)
-print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc}")
+print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.3f}")
 
-for predictor in pygbm_model.predictors_:
-    print(predictor.nodes)
+# for predictor in pygbm_model.predictors_:
+#     print(predictor.nodes)
