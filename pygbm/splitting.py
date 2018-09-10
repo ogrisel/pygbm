@@ -149,16 +149,16 @@ def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
 
 
 @njit(locals={'gradient_left': float32, 'hessian_left': float32,
-              'hessian_parent': float32, 'constant_hessian': uint8,
-              'best_gain': float32, 'best_bin_idx': uint8},
+              'hessian_parent': float32, 'constant_hessian': uint8},
       fastmath=True)
 def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
                           ordered_gradients, ordered_hessians,
                           l2_regularization, min_hessian_to_split):
-    # best_bin_idx = -1 is used if all hessians sums are bellow
-    # min_hessian_to_split
-    best_bin_idx = -1
-    best_gain = -1.
+    # Allocate the structure for the best split information. It can be
+    # returned as such (with a negative gain) if the min_hessian_to_split
+    # condition is not satisfied. Such invalid splits are later discarded by
+    # the TreeGrower.
+    best_split = SplitInfo(-1., 0, 0, 0., 0., 0., 0.)
 
     gradient_parent = ordered_gradients.sum()
     n_samples_node = sample_indices.shape[0]
@@ -200,18 +200,13 @@ def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
                            gradient_right, hessian_right,
                            gradient_parent, hessian_parent,
                            l2_regularization)
-        if gain >= best_gain:
-            best_gain = gain
-            best_bin_idx = bin_idx
-            best_gradient_left = gradient_left
-            best_hessian_left = hessian_left
-            best_gradient_right = gradient_right
-            best_hessian_right = hessian_right
+        if gain > best_split.gain:
+            best_split.gain = gain
+            best_split.feature_idx = feature_idx
+            best_split.bin_idx = bin_idx
+            best_split.gradient_left = gradient_left
+            best_split.hessian_left = hessian_left
+            best_split.gradient_right = gradient_right
+            best_split.hessian_right = hessian_right
 
-    return SplitInfo(best_gain,
-                     feature_idx,
-                     best_bin_idx,
-                     best_gradient_left,
-                     best_hessian_left,
-                     best_gradient_right,
-                     best_hessian_right)
+    return best_split
