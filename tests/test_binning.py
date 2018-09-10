@@ -87,7 +87,18 @@ def test_bin_mapper_random_data(n_bins):
     (5, 3),
     (255, 42),
 ])
-def test_bin_mapper_idem_potence(n_bins, multiplier):
+def test_bin_mapper_identity(n_bins, multiplier):
     data = np.array(list(range(n_bins)) * multiplier).reshape(-1, 1)
     binned = BinMapper(max_bins=n_bins).fit_transform(data)
-    assert_allclose(data, binned)
+    assert_array_equal(data, binned)
+
+
+@pytest.mark.parametrize("n_bins, scale, offset", [
+    (3, 2, -1),
+    (42, 1, 0),
+    (256, 0.3, 42),
+])
+def test_bin_mapper_identity_small(n_bins, scale, offset):
+    data = np.arange(n_bins).reshape(-1, 1) * scale + offset
+    binned = BinMapper(max_bins=n_bins).fit_transform(data)
+    assert_array_equal(binned, np.arange(n_bins).reshape(-1, 1))
