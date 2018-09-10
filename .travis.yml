@@ -8,13 +8,16 @@ env:
     - OMP_NUM_THREADS=4
 matrix:
   include:
-    - python: "3.6"
-      env: TOXENV="py36"
+    - python: "3.7-dev"
+      env: TOXENV="py37" NUMBA_DISABLE_JIT="1"
     - python: "3.7-dev"
       env: TOXENV="py37"
+    - python: "3.6"
+      env: TOXENV="py36"
 
 install: $PYTHON -m pip install tox
 script: tox
 after_success:
   - $PYTHON -m pip install codecov
   - codecov
+
