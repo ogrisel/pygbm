@@ -102,3 +102,20 @@ def test_bin_mapper_identity_small(n_bins, scale, offset):
     data = np.arange(n_bins).reshape(-1, 1) * scale + offset
     binned = BinMapper(max_bins=n_bins).fit_transform(data)
     assert_array_equal(binned, np.arange(n_bins).reshape(-1, 1))
+
+
+@pytest.mark.parametrize('n_bins_small, n_bins_large', [
+    (1, 1),
+    (3, 3),
+    (4, 4),
+    (42, 42),
+    (256, 256),
+    # (5, 17),  # TODO: implement max_bins == n_unique
+    # (42, 256),
+])
+def test_bin_mapper_idempotence(n_bins_small, n_bins_large):
+    assert n_bins_large >= n_bins_small
+    data = np.random.RandomState(42).normal(size=300).reshape(-1, 1)
+    binned_small = BinMapper(max_bins=n_bins_small).fit_transform(data)
+    binned_large = BinMapper(max_bins=n_bins_large).fit_transform(binned_small)
+    assert_array_equal(binned_small, binned_large)
