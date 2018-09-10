@@ -65,6 +65,9 @@ class TreeGrower:
         self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf
         self.features_data = features_data
+        if min_gain_to_split < 0:
+            raise ValueError(f"min_gain_to_split should be positive, got: "
+                             f"{min_gain_to_split}")
         self.min_gain_to_split = min_gain_to_split
         self.shrinkage = shrinkage
         self.splittable_nodes = []
@@ -175,6 +178,7 @@ class TreeGrower:
                                    bin_thresholds=None, next_free_idx=0):
         node = predictor_nodes[next_free_idx]
         node['count'] = grower_node.sample_indices.shape[0]
+        node['depth'] = grower_node.depth
         if grower_node.value is not None:
             # Leaf node
             node['is_leaf'] = True
@@ -186,7 +190,6 @@ class TreeGrower:
             feature_idx, bin_idx = split_info.feature_idx, split_info.bin_idx
             node['feature_idx'] = feature_idx
             node['bin_threshold'] = bin_idx
-            node['depth'] = grower_node.depth
             if bin_thresholds is not None:
                 threshold = bin_thresholds[feature_idx, bin_idx]
                 node['threshold'] = threshold
