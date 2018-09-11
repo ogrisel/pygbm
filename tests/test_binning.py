@@ -126,13 +126,13 @@ def test_bin_mapper_small_random_data(n_samples, n_bins):
                        np.arange(n_samples))
 
 
-@pytest.mark.parametrize("n_bins, multiplier", [
-    (5, 1),
-    (5, 3),
-    (255, 42),
+@pytest.mark.parametrize("n_bins, n_distincts, multiplier", [
+    (5, 5, 1),
+    (5, 5, 3),
+    (255, 12, 42),
 ])
-def test_bin_mapper_identity(n_bins, multiplier):
-    data = np.array(list(range(n_bins)) * multiplier).reshape(-1, 1)
+def test_bin_mapper_identity_repeated_values(n_bins, n_distincts, multiplier):
+    data = np.array(list(range(n_distincts)) * multiplier).reshape(-1, 1)
     binned = BinMapper(max_bins=n_bins).fit_transform(data)
     assert_array_equal(data, binned)
 
