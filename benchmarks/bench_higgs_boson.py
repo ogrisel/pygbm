@@ -59,7 +59,7 @@ lightgbm_model.fit(data_train, target_train)
 toc = time()
 predicted_test = lightgbm_model.predict(data_test)
 roc_auc = roc_auc_score(target_test, predicted_test)
-print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.3f}")
+print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.4f}")
 
 # print(lightgbm_model._Booster._save_model_to_string())
 
@@ -86,7 +86,7 @@ pygbm_model.fit(data_train, target_train)
 toc = time()
 predicted_test = pygbm_model.predict(data_test)
 roc_auc = roc_auc_score(target_test, predicted_test)
-print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.3f}")
+print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.4f}")
 
 # for predictor in pygbm_model.predictors_:
 #     print(predictor.nodes)

@@ -191,7 +191,7 @@ class TreeGrower:
             node['feature_idx'] = feature_idx
             node['bin_threshold'] = bin_idx
             if bin_thresholds is not None:
-                threshold = bin_thresholds[feature_idx, bin_idx]
+                threshold = bin_thresholds[feature_idx][bin_idx]
                 node['threshold'] = threshold
                 node['gain'] = split_info.gain
             next_free_idx += 1
