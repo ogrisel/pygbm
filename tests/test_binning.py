@@ -126,15 +126,40 @@ def test_bin_mapper_small_random_data(n_samples, n_bins):
                        np.arange(n_samples))
 
 
-@pytest.mark.parametrize("n_bins, n_distincts, multiplier", [
+@pytest.mark.parametrize("n_bins, n_distinct, multiplier", [
     (5, 5, 1),
     (5, 5, 3),
     (255, 12, 42),
 ])
-def test_bin_mapper_identity_repeated_values(n_bins, n_distincts, multiplier):
-    data = np.array(list(range(n_distincts)) * multiplier).reshape(-1, 1)
+def test_bin_mapper_identity_repeated_values(n_bins, n_distinct, multiplier):
+    data = np.array(list(range(n_distinct)) * multiplier).reshape(-1, 1)
     binned = BinMapper(max_bins=n_bins).fit_transform(data)
     assert_array_equal(data, binned)
+
+
+@pytest.mark.parametrize('n_distinct', [1, 2, 7, 42])
+def test_bin_mapper_repeated_values_invariance(n_distinct):
+    rng = np.random.RandomState(42)
+    distinct_values = rng.normal(size=n_distinct)
+    assert len(np.unique(distinct_values)) == n_distinct
+
+    repeated_indices = rng.randint(low=0, high=n_distinct, size=1000)
+    data = distinct_values[repeated_indices]
+    rng.shuffle(data)
+    assert_array_equal(np.unique(data), np.sort(distinct_values))
+
+    data = data.reshape(-1, 1)
+
+    mapper_1 = BinMapper(max_bins=n_distinct)
+    binned_1 = mapper_1.fit_transform(data)
+    assert_array_equal(np.unique(binned_1[:, 0]), np.arange(n_distinct))
+
+    # Adding more bins to the mapper yields the same results (same thresholds)
+    mapper_2 = BinMapper(max_bins=min(256, n_distinct * 3))
+    binned_2 = mapper_2.fit_transform(data)
+
+    assert_allclose(mapper_1.bin_thresholds_[0], mapper_2.bin_thresholds_[0])
+    assert_array_equal(binned_1, binned_2)
 
 
 @pytest.mark.parametrize("n_bins, scale, offset", [
