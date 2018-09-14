@@ -11,6 +11,11 @@ from pygbm import GradientBoostingMachine
 # from lightgbm import LGBMClassifier
 # for now as pygbm does not have classifier loss yet:
 from lightgbm import LGBMRegressor
+import numba
+
+if hasattr(numba.config, 'THREADING_LAYER'):
+    numba.config.THREADING_LAYER = 'safe'  # TBB
+
 
 HERE = os.path.dirname(__file__)
 URL = ("https://archive.ics.uci.edu/ml/machine-learning-databases/00280/"
@@ -18,8 +23,9 @@ URL = ("https://archive.ics.uci.edu/ml/machine-learning-databases/00280/"
 m = Memory(location='/tmp', mmap_mode='r')
 n_leaf_nodes = 31
 n_trees = 10
-# subsample = 25000
 subsample = None
+lr = 1.
+max_bins = 255
 
 
 @m.cache
@@ -54,19 +60,28 @@ print(f"Training set with {n_samples} records with {n_features} features.")
 print("Fitting a LightGBM model...")
 tic = time()
 lightgbm_model = LGBMRegressor(n_estimators=n_trees, num_leaves=n_leaf_nodes,
-                               learning_rate=1., verbose=10)
+                               learning_rate=lr, verbose=10)
 lightgbm_model.fit(data_train, target_train)
 toc = time()
 predicted_test = lightgbm_model.predict(data_test)
 roc_auc = roc_auc_score(target_test, predicted_test)
 print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.4f}")
 
-# print(lightgbm_model._Booster._save_model_to_string())
+# model_string = lightgbm_model._Booster._save_model_to_string()
+# in_tree = False
+# for line in model_string.split('\n'):
+#     if line.startswith('Tree'):
+#         in_tree = True
+#     if in_tree and line == '':
+#         in_tree = False
+#         print()
+#     if in_tree:
+#         print(line)
 
 print("JIT compiling code for the pygbm model...")
 tic = time()
-pygbm_model = GradientBoostingMachine(learning_rate=0.1, max_iter=1,
-                                      max_bins=255,
+pygbm_model = GradientBoostingMachine(learning_rate=lr, max_iter=1,
+                                      max_bins=max_bins,
                                       max_leaf_nodes=n_leaf_nodes,
                                       random_state=0, scoring=None,
                                       verbose=0, validation_split=None)
@@ -77,8 +92,8 @@ print(f"done in {toc - tic:.3f}s")
 
 print("Fitting a pygbm model...")
 tic = time()
-pygbm_model = GradientBoostingMachine(learning_rate=1, max_iter=n_trees,
-                                      max_bins=255,
+pygbm_model = GradientBoostingMachine(learning_rate=lr, max_iter=n_trees,
+                                      max_bins=max_bins,
                                       max_leaf_nodes=n_leaf_nodes,
                                       random_state=0, scoring=None,
                                       verbose=1, validation_split=None)
@@ -90,3 +105,7 @@ print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.4f}")
 
 # for predictor in pygbm_model.predictors_:
 #     print(predictor.nodes)
+
+
+if hasattr(numba, 'threading_layer'):
+    print("Threading layer chosen: %s" % numba.threading_layer())
