@@ -1,8 +1,4 @@
-from io import BytesIO
-
 from graphviz import Digraph
-import matplotlib.image as image
-import matplotlib.pyplot as plt
 
 
 def plot_tree(est_pygbm, est_lightgbm=None, tree_index=0, view=True, **kwargs):
