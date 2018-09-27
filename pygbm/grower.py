@@ -11,12 +11,16 @@ class TreeNode:
     left_child = None  # Link to left node (only for non-leaf nodes)
     right_child = None  # Link to right node (only for non-leaf nodes)
     value = None  # Prediction value (only for leaf nodes)
+    histograms = None  # List of histogram (1 per feature)
+    sibling = None  # Link to sibling node, None for root
+    parent = None  # Link to parent node, None for root
 
-    def __init__(self, depth, sample_indices, sum_gradients, sum_hessians):
+    def __init__(self, depth, sample_indices, sum_gradients, sum_hessians, parent=None):
         self.depth = depth
         self.sample_indices = sample_indices
         self.sum_gradients = sum_gradients
         self.sum_hessians = sum_hessians
+        self.parent = parent
 
     def __repr__(self):
         # To help with debugging
@@ -91,8 +95,15 @@ class TreeGrower:
         self._compute_spittability(self.root)
 
     def _compute_spittability(self, node):
-        split_info = self.splitter.find_node_split(node.sample_indices)
+        parent_histograms, sibling_histograms = None, None
+        if node.parent is not None and node.sibling.histograms is not None:
+            parent_histograms = np.asarray(node.parent.histograms)
+            sibling_histograms = np.asarray(node.sibling.histograms)
+
+        split_info, histograms = self.splitter.find_node_split(
+            node.sample_indices, parent_histograms, sibling_histograms)
         node.split_info = split_info
+        node.histograms = histograms
         if split_info.gain < self.min_gain_to_split:
             self._finalize_leaf(node)
         else:
@@ -118,12 +129,14 @@ class TreeGrower:
 
         left_child_node = TreeNode(depth, sample_indices_left,
                                    node.split_info.gradient_left,
-                                   node.split_info.hessian_left)
-        node.left_child = left_child_node
+                                   node.split_info.hessian_left, parent=node)
         right_child_node = TreeNode(depth, sample_indices_right,
                                     node.split_info.gradient_right,
-                                    node.split_info.hessian_right)
+                                    node.split_info.hessian_right, parent=node)
+        left_child_node.sibling = right_child_node
+        right_child_node.sibling = left_child_node
         node.right_child = right_child_node
+        node.left_child = left_child_node
         self.n_nodes += 2
 
         if self.max_depth is not None and depth == self.max_depth:
