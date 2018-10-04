@@ -97,8 +97,8 @@ class TreeGrower:
     def _compute_spittability(self, node):
         parent_histograms, sibling_histograms = None, None
         if node.parent is not None and node.sibling.histograms is not None:
-            parent_histograms = np.asarray(node.parent.histograms)
-            sibling_histograms = np.asarray(node.sibling.histograms)
+            parent_histograms = node.parent.histograms
+            sibling_histograms = node.sibling.histograms
 
         split_info, histograms = self.splitter.find_node_split(
             node.sample_indices, parent_histograms, sibling_histograms)

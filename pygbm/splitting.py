@@ -17,7 +17,7 @@ from .histogram import HISTOGRAM_DTYPE
     ('hessian_left', float32),
     ('gradient_right', float32),
     ('hessian_right', float32),
-    ('hist', typeof(np.zeros(10, dtype=HISTOGRAM_DTYPE))),
+    ('histogram', typeof(HISTOGRAM_DTYPE)[:]),  # array of size n_bins
 ])
 class SplitInfo:
     def __init__(self, gain=0, feature_idx=0, bin_idx=0,
@@ -34,7 +34,8 @@ class SplitInfo:
 @njit(parallel=True)
 def _parallel_find_splits(sample_indices, ordered_gradients, ordered_hessians,
                           n_features, binned_features, n_bins,
-                          l2_regularization, min_hessian_to_split, parent_histograms, sibling_histograms):
+                          l2_regularization, min_hessian_to_split,
+                          parent_histograms, sibling_histograms):
     # Pre-allocate the results datastructure to be able to use prange
     split_infos = [SplitInfo(0, 0, 0, 0., 0., 0., 0.)
                    for i in range(n_features)]
@@ -123,9 +124,13 @@ class HistogramSplitter:
                                             parent_histograms,
                                             sibling_histograms)
         best_gain = None
-        histograms = []
-        for split_info in split_infos:
-            histograms.append(split_info.hist)
+        # need to convert to int64, it's a numba bug. See issue #2756
+        histograms = np.empty(
+            shape=(np.int64(self.n_features), np.int64(self.n_bins)),
+            dtype=HISTOGRAM_DTYPE
+        )
+        for i, split_info in enumerate(split_infos):
+            histograms[i, :] = split_info.histogram
             gain = split_info.gain
             if best_gain is None or gain > best_gain:
                 best_gain = gain
@@ -156,13 +161,14 @@ def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
 
 @njit(locals={'gradient_left': float32, 'hessian_left': float32,
               'hessian_parent': float32, 'constant_hessian': uint8,
-              'parent_histograms': optional(typeof(np.zeros((10, 10), dtype=HISTOGRAM_DTYPE))),
-              'sibling_histograms': optional(typeof(np.zeros((10, 10), dtype=HISTOGRAM_DTYPE))),
+              'parent_histograms': optional(typeof(HISTOGRAM_DTYPE)[:, :]),
+              'sibling_histograms': optional(typeof(HISTOGRAM_DTYPE)[:, :]),
               },
       fastmath=True)
 def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
                           ordered_gradients, ordered_hessians,
-                          l2_regularization, min_hessian_to_split, parent_histograms, sibling_histograms):
+                          l2_regularization, min_hessian_to_split,
+                          parent_histograms, sibling_histograms):
     # Allocate the structure for the best split information. It can be
     # returned as such (with a negative gain) if the min_hessian_to_split
     # condition is not satisfied. Such invalid splits are later discarded by
@@ -228,5 +234,5 @@ def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
             best_split.gradient_right = gradient_right
             best_split.hessian_right = hessian_right
 
-    best_split.hist = histogram
+    best_split.histogram = histogram
     return best_split
