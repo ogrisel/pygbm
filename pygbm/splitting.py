@@ -3,6 +3,7 @@ import numpy as np
 from numba import (njit, jitclass, prange, float32, uint8, uint32, optional,
                    typeof)
 from .histogram import _build_ghc_histogram_unrolled
+from .histogram import _build_ghc_histogram_unrolled_fast
 from .histogram import _build_gc_histogram_unrolled
 from .histogram import _build_ghc_root_histogram_unrolled
 from .histogram import _build_gc_root_histogram_unrolled
@@ -189,11 +190,9 @@ def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
         hessian_parent = ordered_hessians.sum()
 
     if parent_histograms is not None and sibling_histograms is not None:
-        histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
-        for bin_idxx in range(n_bins):
-            histogram[bin_idxx]['sum_gradients'] = parent_histograms[feature_idx][bin_idxx]['sum_gradients'] - sibling_histograms[feature_idx][bin_idxx]['sum_gradients']
-            histogram[bin_idxx]['sum_hessians'] = parent_histograms[feature_idx][bin_idxx]['sum_hessians'] - sibling_histograms[feature_idx][bin_idxx]['sum_hessians']
-            histogram[bin_idxx]['count'] = parent_histograms[feature_idx][bin_idxx]['count'] - sibling_histograms[feature_idx][bin_idxx]['count']
+        histogram = _build_ghc_histogram_unrolled_fast(
+            n_bins, parent_histograms[feature_idx],
+            sibling_histograms[feature_idx])
 
     else:
         if root_node:

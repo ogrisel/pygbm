@@ -21,6 +21,40 @@ def _build_ghc_histogram_naive(n_bins, sample_indices, binned_feature,
 
 
 @njit
+def _build_ghc_histogram_unrolled_fast(n_bins, parent_histogram,
+                                       sibling_histogram):
+    histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
+    unrolled_upper = (n_bins // 4) * 4
+
+    for i in range(0, unrolled_upper, 4):
+        bin_0 = i
+        bin_1 = i + 1
+        bin_2 = i + 2
+        bin_3 = i + 3
+        histogram[bin_0]['sum_gradients'] = parent_histogram[bin_0]['sum_gradients'] - sibling_histogram[bin_0]['sum_gradients']
+        histogram[bin_1]['sum_gradients'] = parent_histogram[bin_1]['sum_gradients'] - sibling_histogram[bin_1]['sum_gradients']
+        histogram[bin_2]['sum_gradients'] = parent_histogram[bin_2]['sum_gradients'] - sibling_histogram[bin_2]['sum_gradients']
+        histogram[bin_3]['sum_gradients'] = parent_histogram[bin_3]['sum_gradients'] - sibling_histogram[bin_3]['sum_gradients']
+
+        histogram[bin_0]['sum_hessians'] = parent_histogram[bin_0]['sum_hessians'] - sibling_histogram[bin_0]['sum_hessians']
+        histogram[bin_1]['sum_hessians'] = parent_histogram[bin_1]['sum_hessians'] - sibling_histogram[bin_1]['sum_hessians']
+        histogram[bin_2]['sum_hessians'] = parent_histogram[bin_2]['sum_hessians'] - sibling_histogram[bin_2]['sum_hessians']
+        histogram[bin_3]['sum_hessians'] = parent_histogram[bin_3]['sum_hessians'] - sibling_histogram[bin_3]['sum_hessians']
+
+        histogram[bin_0]['count'] = parent_histogram[bin_0]['count'] - sibling_histogram[bin_0]['count']
+        histogram[bin_1]['count'] = parent_histogram[bin_1]['count'] - sibling_histogram[bin_1]['count']
+        histogram[bin_2]['count'] = parent_histogram[bin_2]['count'] - sibling_histogram[bin_2]['count']
+        histogram[bin_3]['count'] = parent_histogram[bin_3]['count'] - sibling_histogram[bin_3]['count']
+
+    for i in range(unrolled_upper, n_bins):
+        histogram[i]['sum_gradients'] = parent_histogram[i]['sum_gradients'] - sibling_histogram[i]['sum_gradients']
+        histogram[i]['sum_hessians'] = parent_histogram[i]['sum_hessians'] - sibling_histogram[i]['sum_hessians']
+        histogram[i]['count'] = parent_histogram[i]['count'] - sibling_histogram[i]['count']
+
+    return histogram
+
+
+@njit
 def _build_ghc_histogram_unrolled(n_bins, sample_indices, binned_feature,
                                   ordered_gradients, ordered_hessians):
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
