@@ -163,6 +163,8 @@ def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
               'hessian_parent': float32, 'constant_hessian': uint8,
               'parent_histograms': optional(typeof(HISTOGRAM_DTYPE)[:, :]),
               'sibling_histograms': optional(typeof(HISTOGRAM_DTYPE)[:, :]),
+              'histogram': typeof(HISTOGRAM_DTYPE)[:],
+              'tic': float32
               },
       fastmath=True)
 def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,

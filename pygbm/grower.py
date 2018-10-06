@@ -1,6 +1,7 @@
 import warnings
 from heapq import heappush, heappop
 import numpy as np
+from time import time
 
 from .splitting import HistogramSplitter
 from .predictor import TreePredictor, PREDICTOR_RECORD_DTYPE
@@ -11,9 +12,12 @@ class TreeNode:
     left_child = None  # Link to left node (only for non-leaf nodes)
     right_child = None  # Link to right node (only for non-leaf nodes)
     value = None  # Prediction value (only for leaf nodes)
-    histograms = None  # List of histogram (1 per feature)
+    histograms = None  # array of histogram shape = (n_features, n_bins)
     sibling = None  # Link to sibling node, None for root
     parent = None  # Link to parent node, None for root
+    time = 0  # computation time of the histograms (or rather splitability)
+    ratio = 1  # sibling.time / time if node.fast, else 1
+    fast = False  # whether histogram was computed with fast method
 
     def __init__(self, depth, sample_indices, sum_gradients, sum_hessians, parent=None):
         self.depth = depth
@@ -96,12 +100,20 @@ class TreeGrower:
 
     def _compute_spittability(self, node):
         parent_histograms, sibling_histograms = None, None
+        node.fast = False
+        node.ratio = 1
         if node.parent is not None and node.sibling.histograms is not None:
             parent_histograms = node.parent.histograms
             sibling_histograms = node.sibling.histograms
+            node.fast = True
 
+        tic = time()
         split_info, histograms = self.splitter.find_node_split(
             node.sample_indices, parent_histograms, sibling_histograms)
+        toc = time()
+        node.time = toc - tic
+        if node.fast:
+            node.ratio = node.sibling.time / node.time
         node.split_info = split_info
         node.histograms = histograms
         if split_info.gain < self.min_gain_to_split:
@@ -192,6 +204,9 @@ class TreeGrower:
         node = predictor_nodes[next_free_idx]
         node['count'] = grower_node.sample_indices.shape[0]
         node['depth'] = grower_node.depth
+        node['fast'] = grower_node.fast
+        node['time'] = grower_node.time
+        node['ratio'] = grower_node.ratio
         if grower_node.value is not None:
             # Leaf node
             node['is_leaf'] = True

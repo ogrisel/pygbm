@@ -22,6 +22,9 @@ def plot_tree(est_pygbm, est_lightgbm=None, tree_index=0, view=True, **kwargs):
                 label = 'leaf_index: {0}'.format(node_idx)
                 label += r'\nleaf_value: {0}'.format(node['value'])
                 label += r'\nleaf_count: {0}'.format(node['count'])
+                label += '\ntime: {0:.10f}'.format(node['time'])
+                label += '\nfast: {0}'.format(node['fast'])
+                label += '\nratio: {0}'.format(node['ratio'])
                 graph.node(name, label=label)
             else:
                 name = 'split__{0}'.format(node_idx)
@@ -30,6 +33,10 @@ def plot_tree(est_pygbm, est_lightgbm=None, tree_index=0, view=True, **kwargs):
                 label += r'\nthreshold: {0}'.format(node['threshold'])
                 for info in ('gain', 'value', 'count'):
                     label += r'\n{0}: {1}'.format(info, node[info])
+                label += '\ntime: {0:.10f}'.format(node['time'])
+                label += '\nfast: {0}'.format(node['fast'])
+                label += '\nratio: {0}'.format(node['ratio'])
+
                 graph.node(name, label=label)
                 add(node['left'], name, decision='<=')
                 add(node['right'], name, decision='>')
