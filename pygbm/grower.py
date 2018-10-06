@@ -19,7 +19,8 @@ class TreeNode:
     ratio = 1  # sibling.time / time if node.fast, else 1
     fast = False  # whether histogram was computed with fast method
 
-    def __init__(self, depth, sample_indices, sum_gradients, sum_hessians, parent=None):
+    def __init__(self, depth, sample_indices, sum_gradients, sum_hessians,
+                 parent=None):
         self.depth = depth
         self.sample_indices = sample_indices
         self.sum_gradients = sum_gradients

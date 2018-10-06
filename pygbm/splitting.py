@@ -31,6 +31,7 @@ class SplitInfo:
         self.gradient_right = gradient_right
         self.hessian_right = hessian_right
 
+
 @njit(parallel=True)
 def _parallel_find_splits(sample_indices, ordered_gradients, ordered_hessians,
                           n_features, binned_features, n_bins,
@@ -92,7 +93,8 @@ class HistogramSplitter:
 
         return sample_indices_left[:left_idx], sample_indices_right[:right_idx]
 
-    def find_node_split(self, sample_indices, parent_histograms, sibling_histograms):
+    def find_node_split(self, sample_indices, parent_histograms,
+                        sibling_histograms):
         loss_dtype = self.all_gradients.dtype
 
         if sample_indices.shape[0] == self.all_gradients.shape[0]:
@@ -200,7 +202,8 @@ def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
                     n_bins, binned_feature, ordered_gradients)
             else:
                 histogram = _build_ghc_root_histogram_unrolled(
-                    n_bins, binned_feature, ordered_gradients, ordered_hessians)
+                    n_bins, binned_feature, ordered_gradients,
+                    ordered_hessians)
         else:
             if constant_hessian:
                 histogram = _build_gc_histogram_unrolled(
