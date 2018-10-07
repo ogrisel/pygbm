@@ -15,9 +15,12 @@ class TreeNode:
     histograms = None  # array of histogram shape = (n_features, n_bins)
     sibling = None  # Link to sibling node, None for root
     parent = None  # Link to parent node, None for root
-    time = 0  # computation time of the histograms (or rather splitability)
-    ratio = 1  # sibling.time / time if node.fast, else 1
-    fast = False  # whether histogram was computed with fast method
+    time = 0 # Computation time of the histograms, or more precisely time to
+             # compute splitability, which may involve some useless
+             # computations
+    ratio = 1  # sibling.time / node.time if node.fast, else 1
+    fast = False # Whether histograms were computed with fast method, i.e.
+                 # using hist = hist(parent) - hist(sibling)
 
     def __init__(self, depth, sample_indices, sum_gradients, sum_hessians,
                  parent=None):
@@ -99,25 +102,47 @@ class TreeGrower:
             return
         self._compute_spittability(self.root)
 
-    def _compute_spittability(self, node):
-        parent_histograms, sibling_histograms = None, None
-        node.fast = False
-        node.ratio = 1
-        if node.parent is not None and node.sibling.histograms is not None:
-            parent_histograms = node.parent.histograms
-            sibling_histograms = node.sibling.histograms
-            node.fast = True
+    def _compute_spittability(self, node, only_hist=False):
+        """Compute histograms and split_info of a node and either make it a
+        leave or push it on the splittable node heap.
 
-        tic = time()
-        split_info, histograms = self.splitter.find_node_split(
-            node.sample_indices, parent_histograms, sibling_histograms)
-        toc = time()
-        node.time = toc - tic
-        if node.fast:
-            node.ratio = node.sibling.time / node.time
-        node.split_info = split_info
-        node.histograms = histograms
-        if split_info.gain < self.min_gain_to_split:
+        only_hist is used when _compute_spittability was called for a
+        sibling: we only want to compute the histograms, not finalize or
+        push the node. If _compute_spittability is called again by the
+        grower on the sibling node, the histograms won't be computed again.
+        """
+
+        # Compute split_info and histograms if not already done
+        if node.split_info is None and node.histograms is None:
+            parent_histograms, sibling_histograms = None, None
+            # compute hist of sibling first if it has less samples
+            if node.sibling is not None:  # root has no sibling
+                n_samples_sibling = node.sibling.sample_indices.shape[0]
+                n_samples_node = node.sample_indices.shape[0]
+                if n_samples_sibling < n_samples_node:
+                    self._compute_spittability(node.sibling, only_hist=True)
+                    # As hist of sibling is now computed we'll use the fast
+                    # hist method for the current node. Fast hist computation
+                    # will be triggered by passing non-None parent_histograms
+                    # and sibling_histograms
+                    node.fast = True
+                    parent_histograms = node.parent.histograms
+                    sibling_histograms = node.sibling.histograms
+
+            tic = time()
+            split_info, histograms = self.splitter.find_node_split(
+                node.sample_indices, parent_histograms, sibling_histograms)
+            toc = time()
+            node.time = toc - tic
+            if node.fast:
+                node.ratio = node.sibling.time / node.time
+            node.split_info = split_info
+            node.histograms = histograms
+
+        if only_hist:
+            return
+
+        if node.split_info.gain < self.min_gain_to_split:
             self._finalize_leaf(node)
         else:
             heappush(self.splittable_nodes, node)
