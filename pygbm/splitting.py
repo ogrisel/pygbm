@@ -123,17 +123,40 @@ class HistogramSplitter:
                 best_split_info = split_info
         return best_split_info, histograms
 
-    def find_node_split_by_subtraction(self, sample_indices,
-                                       parent_histograms, sibling_histograms):
 
-        split_infos = _parallel_subtract_histograms(sample_indices,
-                                                    self.n_features,
-                                                    self.binned_features,
-                                                    self.n_bins,
-                                                    self.l2_regularization,
-                                                    self.min_hessian_to_split,
-                                                    parent_histograms,
-                                                    sibling_histograms)
+    def find_node_split_subtraction(self, sample_indices, parent_histograms,
+                        sibling_histograms):
+        loss_dtype = self.all_gradients.dtype
+
+        if sample_indices.shape[0] == self.all_gradients.shape[0]:
+            # Root node: the ordering of sample_indices and all_gradients
+            # are expected to be consistent in this case.
+            ordered_gradients = self.all_gradients
+            ordered_hessians = self.all_hessians
+        else:
+            ordered_gradients = np.empty_like(sample_indices, dtype=loss_dtype)
+            if self.constant_hessian:
+                ordered_hessians = self.all_hessians
+                for i, sample_idx in enumerate(sample_indices):
+                    ordered_gradients[i] = self.all_gradients[sample_idx]
+            else:
+                ordered_hessians = np.empty_like(sample_indices,
+                                                 dtype=loss_dtype)
+                for i, sample_idx in enumerate(sample_indices):
+                    ordered_gradients[i] = self.all_gradients[sample_idx]
+                    ordered_hessians[i] = self.all_hessians[sample_idx]
+            
+
+        split_infos = _parallel_find_splits_subtraction(sample_indices,
+                                            ordered_gradients,
+                                            ordered_hessians,
+                                            self.n_features,
+                                            self.binned_features,
+                                            self.n_bins,
+                                            self.l2_regularization,
+                                            self.min_hessian_to_split,
+                                            parent_histograms,
+                                            sibling_histograms)
         best_gain = None
         # need to convert to int64, it's a numba bug. See issue #2756
         histograms = np.empty(
@@ -189,7 +212,7 @@ def _parallel_find_splits(sample_indices, ordered_gradients, ordered_hessians,
 
 
 @njit(parallel=True)
-def _parallel_subtract_histograms(sample_indices, 
+def _parallel_find_splits_subtraction(sample_indices, ordered_gradients, ordered_hessians,
                           n_features, binned_features, n_bins,
                           l2_regularization, min_hessian_to_split,
                           parent_histograms, sibling_histograms):
@@ -200,11 +223,10 @@ def _parallel_subtract_histograms(sample_indices,
         binned_feature = binned_features.T[feature_idx]
         split_info = _find_histogram_split_subtraction(
             feature_idx, binned_feature, n_bins, sample_indices,
-            l2_regularization,
+            ordered_gradients, ordered_hessians, l2_regularization,
             min_hessian_to_split, parent_histograms, sibling_histograms)
         split_infos[feature_idx] = split_info
     return split_infos
-
 
 
 @njit(locals={'gradient_left': float32, 'hessian_left': float32,
@@ -287,33 +309,46 @@ def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
     return best_split
 
 
-@njit(locals={'gradient_left': float32,
+@njit(locals={'gradient_left': float32, 'hessian_left': float32,
+              'hessian_parent': float32, 'constant_hessian': uint8,
               'parent_histograms': optional(typeof(HISTOGRAM_DTYPE)[:, :]),
               'sibling_histograms': optional(typeof(HISTOGRAM_DTYPE)[:, :]),
               'histogram': typeof(HISTOGRAM_DTYPE)[:],
               'tic': float32
               },
       fastmath=True)
-def _find_histogram_split_subtraction(feature_idx, binned_feature, n_bins,
-                                      sample_indices, l2_regularization,
-                                      min_hessian_to_split, parent_histograms,
-                                      sibling_histograms):
+def _find_histogram_split_subtraction(feature_idx, binned_feature, n_bins, sample_indices,
+                          ordered_gradients, ordered_hessians,
+                          l2_regularization, min_hessian_to_split,
+                          parent_histograms, sibling_histograms):
     # Allocate the structure for the best split information. It can be
     # returned as such (with a negative gain) if the min_hessian_to_split
     # condition is not satisfied. Such invalid splits are later discarded by
     # the TreeGrower.
     best_split = SplitInfo(-1., 0, 0, 0., 0., 0., 0.)
 
+    gradient_parent = ordered_gradients.sum()
+    n_samples_node = sample_indices.shape[0]
+    constant_hessian = ordered_hessians.shape[0] == 1
+    if constant_hessian:
+        hessian_parent = ordered_hessians[0] * n_samples_node
+    else:
+        hessian_parent = ordered_hessians.sum()
+
     histogram = _subtract_ghc_histograms_unrolled(
         n_bins, parent_histograms[feature_idx],
         sibling_histograms[feature_idx])
 
-    gradient_parent = np.sum(histogram[:]['sum_gradients'])
-    hessian_parent = np.sum(histogram[:]['sum_hessians'])
+    # gradient_parent = np.sum(histogram[:]['sum_gradients'])
+    # hessian_parent = np.sum(histogram[:]['sum_hessians'])
+
     gradient_left, hessian_left = 0., 0.
     for bin_idx in range(n_bins):
         gradient_left += histogram[bin_idx]['sum_gradients']
-        hessian_left += histogram[bin_idx]['sum_hessians']
+        if constant_hessian:
+            hessian_left += histogram[bin_idx]['count'] * ordered_hessians[0]
+        else:
+            hessian_left += histogram[bin_idx]['sum_hessians']
         if hessian_left < min_hessian_to_split:
             continue
         hessian_right = hessian_parent - hessian_left

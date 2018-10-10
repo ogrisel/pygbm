@@ -131,7 +131,7 @@ class TreeGrower:
 
             tic = time()
             if parent_histograms is not None and sibling_histograms is not None:
-                split_info, histograms = self.splitter.find_node_split_by_subtraction(
+                split_info, histograms = self.splitter.find_node_split_subtraction(
                     node.sample_indices, parent_histograms, sibling_histograms)
             else:
                 split_info, histograms = self.splitter.find_node_split(
