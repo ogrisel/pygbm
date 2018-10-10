@@ -130,8 +130,12 @@ class TreeGrower:
                     sibling_histograms = node.sibling.histograms
 
             tic = time()
-            split_info, histograms = self.splitter.find_node_split(
-                node.sample_indices, parent_histograms, sibling_histograms)
+            if parent_histograms is not None and sibling_histograms is not None:
+                split_info, histograms = self.splitter.find_node_split_by_subtraction(
+                    node.sample_indices, parent_histograms, sibling_histograms)
+            else:
+                split_info, histograms = self.splitter.find_node_split(
+                    node.sample_indices, parent_histograms, sibling_histograms)
             toc = time()
             node.time = toc - tic
             if node.fast:
