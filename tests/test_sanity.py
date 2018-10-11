@@ -8,7 +8,6 @@ from sklearn.datasets import make_classification
 from sklearn.metrics import roc_auc_score
 import numpy as np
 from pygbm import GradientBoostingMachine
-from pygbm import plotting
 
 
 def test_preds_are_as_expected():
@@ -31,7 +30,11 @@ def test_preds_are_as_expected():
     predicted_test = pygbm_model.predict(data_test)
     roc_auc = roc_auc_score(target_test, predicted_test)
 
-    # plotting.plot_tree(pygbm_model, view=True)
+    try:
+        from pygbm import plotting
+        plotting.plot_tree(pygbm_model, view=True)
+    except:
+        pass
 
     assert np.allclose(roc_auc, 0.9809811751028725)
 
