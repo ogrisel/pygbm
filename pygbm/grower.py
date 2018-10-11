@@ -109,7 +109,7 @@ class TreeGrower:
         only_hist is used when _compute_spittability was called for a
         sibling: we only want to compute the histograms, not finalize or
         push the node. If _compute_spittability is called again by the
-        grower on the sibling node, the histograms won't be computed again.
+        grower on this same node, the histograms won't be computed again.
         """
 
         # Compute split_info and histograms if not already done
@@ -135,7 +135,7 @@ class TreeGrower:
                     node.sample_indices, parent_histograms, sibling_histograms)
             else:
                 split_info, histograms = self.splitter.find_node_split(
-                    node.sample_indices, parent_histograms, sibling_histograms)
+                    node.sample_indices)
             toc = time()
             node.time = toc - tic
             if node.fast:
