@@ -94,9 +94,14 @@ class TreeGrower:
     def _intilialize_root(self):
         n_samples = self.features_data.shape[0]
         depth = 0
+        if self.splitter.constant_hessian:
+            hessian = self.splitter.all_hessians * n_samples
+        else:
+            hessian = self.splitter.all_hessians.sum()
         self.root = TreeNode(depth, np.arange(n_samples, dtype=np.uint32),
                              self.splitter.all_gradients.sum(),
-                             self.splitter.all_hessians.sum())
+                             hessian)
+        print(self.root.sum_hessians)
         if (self.max_leaf_nodes is not None and self.max_leaf_nodes == 1):
             self._finalize_leaf(self.root)
             return
@@ -243,6 +248,7 @@ class TreeGrower:
             node['gain'] = grower_node.split_info.gain
         else:
             node['gain'] = -1
+
         if grower_node.value is not None:
             # Leaf node
             node['is_leaf'] = True

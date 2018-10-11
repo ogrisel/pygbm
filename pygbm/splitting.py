@@ -251,7 +251,7 @@ def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
               'histogram': typeof(HISTOGRAM_DTYPE)[:],
               'tic': float32,
               'gradient': float32,
-              hessian_parent': float32,
+              'hessian': float32,
               },
       fastmath=True)
 def _find_histogram_split_subtraction(feature_idx, binned_feature, n_bins,
