@@ -6,7 +6,9 @@ to make sure I don't screw up everything when making a change.
 from sklearn.model_selection import train_test_split
 from sklearn.datasets import make_classification
 from sklearn.metrics import roc_auc_score
+import numpy as np
 from pygbm import GradientBoostingMachine
+from pygbm import plotting
 
 
 def test_preds_are_as_expected():
@@ -29,4 +31,8 @@ def test_preds_are_as_expected():
     predicted_test = pygbm_model.predict(data_test)
     roc_auc = roc_auc_score(target_test, predicted_test)
 
-    assert roc_auc == 0.9809811751028725
+    # plotting.plot_tree(pygbm_model, view=True)
+
+    assert np.allclose(roc_auc, 0.9809811751028725)
+
+#test_preds_are_as_expected()
