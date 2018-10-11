@@ -237,6 +237,12 @@ class TreeGrower:
         node['fast'] = grower_node.fast
         node['time'] = grower_node.time
         node['ratio'] = grower_node.ratio
+        node['sum_g'] = grower_node.sum_gradients
+        node['sum_h'] = grower_node.sum_hessians
+        if grower_node.split_info is not None:
+            node['gain'] = grower_node.split_info.gain
+        else:
+            node['gain'] = -1
         if grower_node.value is not None:
             # Leaf node
             node['is_leaf'] = True
