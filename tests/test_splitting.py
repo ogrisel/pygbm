@@ -23,7 +23,9 @@ def test_hitstogram_split(n_bins):
             split_info = _find_histogram_split(
                 feature_idx, binned_feature, n_bins, sample_indices,
                 ordered_gradients, ordered_hessians, l2_regularization,
-                min_hessian_to_split, True, ordered_hessians[0])
+                min_hessian_to_split, True, ordered_hessians[0],
+                ordered_gradients.sum(),
+                ordered_hessians[0] * sample_indices.shape[0])
 
             assert split_info.bin_idx == true_bin
             assert split_info.gain >= 0
