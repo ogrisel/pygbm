@@ -201,7 +201,7 @@ def _parallel_find_split_subtraction(sample_indices,
 
 
 @njit(locals={'gradient_left': float32, 'hessian_left': float32,
-              'hessian_parent': float32, 'constant_hessian': uint8,
+              'hessian': float32, 'constant_hessian': uint8,
               'histogram': typeof(HISTOGRAM_DTYPE)[:],
               'tic': float32
               },
@@ -213,12 +213,12 @@ def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
     """Compute the histogram for a given feature and return the best bin to
     split on."""
 
-    gradient_parent = ordered_gradients.sum()
+    gradient = ordered_gradients.sum()
     root_node = binned_feature.shape[0] == sample_indices.shape[0]
     if constant_hessian:
-        hessian_parent = constant_hessian_val * sample_indices.shape[0]
+        hessian = constant_hessian_val * sample_indices.shape[0]
     else:
-        hessian_parent = ordered_hessians.sum()
+        hessian = ordered_hessians.sum()
 
     if root_node:
         if constant_hessian:
@@ -239,19 +239,19 @@ def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
 
     return _find_best_bin_to_split_helper(
         feature_idx, n_bins, histogram, min_hessian_to_split,
-        l2_regularization, gradient_parent, hessian_parent,
+        l2_regularization, gradient, hessian,
         constant_hessian, constant_hessian_val
     )
 
 
 @njit(locals={'gradient_left': float32, 'hessian_left': float32,
-              'hessian_parent': float32, 'constant_hessian': uint8,
+              'hessian': float32, 'constant_hessian': uint8,
               'parent_histograms': typeof(HISTOGRAM_DTYPE)[:, :],
               'sibling_histograms': typeof(HISTOGRAM_DTYPE)[:, :],
               'histogram': typeof(HISTOGRAM_DTYPE)[:],
               'tic': float32,
-              'gradient_parent': float32,
-              'hessian_parent': float32,
+              'gradient': float32,
+              hessian_parent': float32,
               },
       fastmath=True)
 def _find_histogram_split_subtraction(feature_idx, binned_feature, n_bins,
@@ -267,15 +267,15 @@ def _find_histogram_split_subtraction(feature_idx, binned_feature, n_bins,
         sibling_histograms[feature_idx]
     )
 
-    gradient_parent = np.sum(histogram[:]['sum_gradients'])
+    gradient = np.sum(histogram[:]['sum_gradients'])
     if constant_hessian:
-        hessian_parent = constant_hessian_val * sample_indices.shape[0]
+        hessian = constant_hessian_val * sample_indices.shape[0]
     else:
-        hessian_parent = np.sum(histogram[:]['sum_hessians'])
+        hessian = np.sum(histogram[:]['sum_hessians'])
 
     return _find_best_bin_to_split_helper(
         feature_idx, n_bins, histogram, min_hessian_to_split,
-        l2_regularization, gradient_parent, hessian_parent,
+        l2_regularization, gradient, hessian,
         constant_hessian, constant_hessian_val
     )
 
@@ -283,8 +283,8 @@ def _find_histogram_split_subtraction(feature_idx, binned_feature, n_bins,
 @njit(fastmath=True)
 def _find_best_bin_to_split_helper(feature_idx, n_bins, histogram,
                                    min_hessian_to_split, l2_regularization,
-                                   gradient_parent, hessian_parent,
-                                   constant_hessian, constant_hessian_val):
+                                   gradient, hessian, constant_hessian,
+                                   constant_hessian_val):
     """For a given feature and the corresponding histogram, find best bin to
     split on and return the corresponding SplitInfo"""
     # Allocate the structure for the best split information. It can be
@@ -302,13 +302,13 @@ def _find_best_bin_to_split_helper(feature_idx, n_bins, histogram,
             hessian_left += histogram[bin_idx]['sum_hessians']
         if hessian_left < min_hessian_to_split:
             continue
-        hessian_right = hessian_parent - hessian_left
+        hessian_right = hessian- hessian_left
         if hessian_right < min_hessian_to_split:
             continue
-        gradient_right = gradient_parent - gradient_left
+        gradient_right = gradient - gradient_left
         gain = _split_gain(gradient_left, hessian_left,
                            gradient_right, hessian_right,
-                           gradient_parent, hessian_parent,
+                           gradient, hessian,
                            l2_regularization)
         if gain > best_split.gain:
             best_split.gain = gain
@@ -325,7 +325,7 @@ def _find_best_bin_to_split_helper(feature_idx, n_bins, histogram,
 
 @njit(fastmath=False)
 def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
-                gradient_parent, hessian_parent, l2_regularization):
+                gradient, hessian, l2_regularization):
     """Loss reduction
 
     Compute the reduction in loss after taking a split compared to keeping
@@ -340,5 +340,5 @@ def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
 
     gain = negative_loss(gradient_left, hessian_left)
     gain += negative_loss(gradient_right, hessian_right)
-    gain -= negative_loss(gradient_parent, hessian_parent)
+    gain -= negative_loss(gradient, hessian)
     return gain
