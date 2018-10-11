@@ -101,7 +101,6 @@ class TreeGrower:
         self.root = TreeNode(depth, np.arange(n_samples, dtype=np.uint32),
                              self.splitter.all_gradients.sum(),
                              hessian)
-        print(self.root.sum_hessians)
         if (self.max_leaf_nodes is not None and self.max_leaf_nodes == 1):
             self._finalize_leaf(self.root)
             return
