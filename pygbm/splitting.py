@@ -207,11 +207,7 @@ def _parallel_find_split_subtraction(sample_indices,
     return _find_best_feature_to_split_helper(n_features, n_bins, split_infos)
 
 
-@njit(locals={'gradient_left': float32, 'hessian_left': float32,
-              'hessian': float32, 'constant_hessian': uint8,
-              'histogram': typeof(HISTOGRAM_DTYPE)[:],
-              'tic': float32
-              },
+@njit(locals={'histogram': typeof(HISTOGRAM_DTYPE)[:]},
       fastmath=True)
 def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
                           ordered_gradients, ordered_hessians,
@@ -248,15 +244,9 @@ def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
     )
 
 
-@njit(locals={'gradient_left': float32, 'hessian_left': float32,
-              'hessian': float32, 'constant_hessian': uint8,
-              'parent_histograms': typeof(HISTOGRAM_DTYPE)[:, :],
-              'sibling_histograms': typeof(HISTOGRAM_DTYPE)[:, :],
-              'histogram': typeof(HISTOGRAM_DTYPE)[:],
-              'tic': float32,
+@njit(locals={'histogram': typeof(HISTOGRAM_DTYPE)[:],
               'gradient': float32,
-              'hessian': float32,
-              },
+              'hessian': float32},
       fastmath=True)
 def _find_histogram_split_subtraction(feature_idx, binned_feature, n_bins,
                                       sample_indices, l2_regularization,
@@ -284,7 +274,8 @@ def _find_histogram_split_subtraction(feature_idx, binned_feature, n_bins,
     )
 
 
-@njit(fastmath=True)
+@njit(locals={'gradient_left': float32, 'hessian_left': float32},
+      fastmath=True)
 def _find_best_bin_to_split_helper(feature_idx, n_bins, histogram,
                                    min_hessian_to_split, l2_regularization,
                                    gradient, hessian, constant_hessian,
