@@ -32,7 +32,7 @@ def test_preds_are_as_expected():
 
     try:
         from pygbm import plotting
-        # plotting.plot_tree(pygbm_model, view=True)
+        # plotting.plot_tree(pygbm_model, tree_index=5, view=False)
     except:
         pass
 

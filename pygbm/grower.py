@@ -110,33 +110,30 @@ class TreeGrower:
         """Compute histograms and split_info of a node and either make it a
         leave or push it on the splittable node heap.
 
-        only_hist is used when _compute_spittability was called for a
-        sibling: we only want to compute the histograms, not finalize or
-        push the node. If _compute_spittability is called again by the
-        grower on this same node, the histograms won't be computed again.
+        only_hist is used when _compute_spittability was called by a sibling
+        node: we only want to compute the histograms, not finalize or push
+        the node. If _compute_spittability is called again by the grower on
+        this same node, the histograms won't be computed again.
         """
 
         # Compute split_info and histograms if not already done
         if node.split_info is None and node.histograms is None:
-            parent_histograms, sibling_histograms = None, None
-            # compute hist of sibling first if it has less samples
+            # If the sibling has less samples, compute its hist first (with the
+            # slow method) and use the fast method for the current node
             if node.sibling is not None:  # root has no sibling
                 n_samples_sibling = node.sibling.sample_indices.shape[0]
                 n_samples_node = node.sample_indices.shape[0]
                 if n_samples_sibling < n_samples_node:
                     self._compute_spittability(node.sibling, only_hist=True)
                     # As hist of sibling is now computed we'll use the fast
-                    # hist method for the current node. Fast hist computation
-                    # will be triggered by passing non-None parent_histograms
-                    # and sibling_histograms
+                    # hist method for the current node.
                     node.fast = True
-                    parent_histograms = node.parent.histograms
-                    sibling_histograms = node.sibling.histograms
 
             tic = time()
-            if parent_histograms is not None and sibling_histograms is not None:
+            if node.fast:
                 split_info, histograms = self.splitter.find_node_split_subtraction(
-                    node.sample_indices, parent_histograms, sibling_histograms)
+                    node.sample_indices, node.parent.histograms,
+                    node.sibling.histograms)
             else:
                 split_info, histograms = self.splitter.find_node_split(
                     node.sample_indices)
@@ -148,6 +145,8 @@ class TreeGrower:
             node.histograms = histograms
 
         if only_hist:
+            # _compute_spittability was called by a sibling. We only needed to
+            # compute the histogram
             return
 
         if node.split_info.gain < self.min_gain_to_split:
