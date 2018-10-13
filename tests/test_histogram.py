@@ -2,16 +2,16 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 from numpy.testing import assert_array_equal
-from pygbm.histogram import _build_ghc_histogram_naive
-from pygbm.histogram import _build_ghc_histogram_unrolled
-from pygbm.histogram import _build_gc_histogram_unrolled
-from pygbm.histogram import _build_gc_root_histogram_unrolled
-from pygbm.histogram import _build_ghc_root_histogram_unrolled
-from pygbm.histogram import _subtract_ghc_histograms_unrolled
+from pygbm.histogram import _build_histogram_naive
+from pygbm.histogram import _build_histogram
+from pygbm.histogram import _build_histogram_no_hessian
+from pygbm.histogram import _build_histogram_root_no_hessian
+from pygbm.histogram import _build_histogram_root
+from pygbm.histogram import _subtract_histograms
 
 
 @pytest.mark.parametrize(
-    'build_func', [_build_ghc_histogram_naive, _build_ghc_histogram_unrolled])
+    'build_func', [_build_histogram_naive, _build_histogram])
 def test_build_histogram(build_func):
     binned_feature = np.array([0, 2, 0, 1, 2, 0, 2, 1], dtype=np.uint8)
 
@@ -48,20 +48,19 @@ def test_histogram_sample_order_independence():
     sample_indices = rng.choice(np.arange(n_samples, dtype=np.uint32),
                                 n_sub_samples, replace=False)
     ordered_gradients = rng.randn(n_sub_samples).astype(np.float32)
-    hist_gc = _build_gc_histogram_unrolled(n_bins, sample_indices,
-                                           binned_feature, ordered_gradients)
+    hist_gc = _build_histogram_no_hessian(n_bins, sample_indices,
+                                          binned_feature, ordered_gradients)
 
     ordered_hessians = rng.exponential(size=n_sub_samples).astype(np.float32)
-    hist_ghc = _build_ghc_histogram_unrolled(n_bins, sample_indices,
-                                             binned_feature, ordered_gradients,
-                                             ordered_hessians)
+    hist_ghc = _build_histogram(n_bins, sample_indices, binned_feature,
+                                ordered_gradients, ordered_hessians)
 
     permutation = rng.permutation(n_sub_samples)
-    hist_gc_perm = _build_gc_histogram_unrolled(
+    hist_gc_perm = _build_histogram_no_hessian(
         n_bins, sample_indices[permutation], binned_feature,
         ordered_gradients[permutation])
 
-    hist_ghc_perm = _build_ghc_histogram_unrolled(
+    hist_ghc_perm = _build_histogram(
         n_bins, sample_indices[permutation], binned_feature,
         ordered_gradients[permutation], ordered_hessians[permutation])
 
@@ -84,22 +83,17 @@ def test_unrolled_equivalent_to_naive():
     ordered_gradients = rng.randn(n_samples).astype(np.float32)
     ordered_hessians = np.ones(n_samples, dtype=np.float32)
 
-    hist_gc_root = _build_gc_root_histogram_unrolled(n_bins, binned_feature,
-                                                     ordered_gradients)
-    hist_ghc_root = _build_ghc_root_histogram_unrolled(n_bins, binned_feature,
-                                                       ordered_gradients,
-                                                       ordered_hessians)
-    hist_gc = _build_gc_histogram_unrolled(n_bins, sample_indices,
-                                           binned_feature,
-                                           ordered_gradients)
-    hist_ghc = _build_ghc_histogram_unrolled(n_bins, sample_indices,
-                                             binned_feature,
-                                             ordered_gradients,
-                                             ordered_hessians)
+    hist_gc_root = _build_histogram_root_no_hessian(n_bins, binned_feature,
+                                                    ordered_gradients)
+    hist_ghc_root = _build_histogram_root(n_bins, binned_feature,
+                                          ordered_gradients, ordered_hessians)
+    hist_gc = _build_histogram_no_hessian(n_bins, sample_indices,
+                                          binned_feature, ordered_gradients)
+    hist_ghc = _build_histogram(n_bins, sample_indices, binned_feature,
+                                ordered_gradients, ordered_hessians)
 
-    hist_naive = _build_ghc_histogram_naive(n_bins, sample_indices,
-                                            binned_feature, ordered_gradients,
-                                            ordered_hessians)
+    hist_naive = _build_histogram_naive(n_bins, sample_indices, binned_feature,
+                                        ordered_gradients, ordered_hessians)
 
     for hist in (hist_gc_root, hist_ghc_root, hist_gc, hist_gc, hist_ghc):
         assert_array_equal(hist['count'], hist_naive['count'])
@@ -121,10 +115,8 @@ def test_hist_subtraction():
     ordered_gradients = rng.randn(n_samples).astype(np.float32)
     ordered_hessians = np.ones(n_samples, dtype=np.float32)
 
-    hist_parent = _build_ghc_histogram_unrolled(n_bins, sample_indices,
-                                                binned_feature,
-                                                ordered_gradients,
-                                                ordered_hessians)
+    hist_parent = _build_histogram(n_bins, sample_indices, binned_feature,
+                                   ordered_gradients, ordered_hessians)
 
 
     mask = rng.randint(0, 2, n_samples).astype(np.bool)
@@ -132,23 +124,18 @@ def test_hist_subtraction():
     sample_indices_left = sample_indices[mask]
     ordered_gradients_left = ordered_gradients[mask]
     ordered_hessians_left = ordered_hessians[mask]
-    hist_left = _build_ghc_histogram_unrolled(n_bins, sample_indices_left,
-                                              binned_feature,
-                                              ordered_gradients_left,
-                                              ordered_hessians_left)
+    hist_left = _build_histogram(n_bins, sample_indices_left, binned_feature,
+                                 ordered_gradients_left, ordered_hessians_left)
 
     sample_indices_right = sample_indices[~mask]
     ordered_gradients_right = ordered_gradients[~mask]
     ordered_hessians_right = ordered_hessians[~mask]
-    hist_right = _build_ghc_histogram_unrolled(n_bins, sample_indices_right,
-                                               binned_feature,
-                                               ordered_gradients_right,
-                                               ordered_hessians_right)
+    hist_right = _build_histogram(n_bins, sample_indices_right, binned_feature,
+                                  ordered_gradients_right,
+                                  ordered_hessians_right)
 
-    hist_left_sub = _subtract_ghc_histograms_unrolled(n_bins, hist_parent,
-                                                      hist_right)
-    hist_right_sub = _subtract_ghc_histograms_unrolled(n_bins, hist_parent,
-                                                      hist_left)
+    hist_left_sub = _subtract_histograms(n_bins, hist_parent, hist_right)
+    hist_right_sub = _subtract_histograms(n_bins, hist_parent, hist_left)
 
     for key in ('count', 'sum_hessians', 'sum_gradients'):
         assert_allclose(hist_left[key], hist_left_sub[key], rtol=1e-6)

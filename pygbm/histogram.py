@@ -9,8 +9,8 @@ HISTOGRAM_DTYPE = np.dtype([
 
 
 @njit
-def _build_ghc_histogram_naive(n_bins, sample_indices, binned_feature,
-                               ordered_gradients, ordered_hessians):
+def _build_histogram_naive(n_bins, sample_indices, binned_feature,
+                           ordered_gradients, ordered_hessians):
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     for i, sample_idx in enumerate(sample_indices):
         bin_idx = binned_feature[sample_idx]
@@ -21,7 +21,7 @@ def _build_ghc_histogram_naive(n_bins, sample_indices, binned_feature,
 
 
 @njit
-def _subtract_ghc_histograms_unrolled(n_bins, hist_a, hist_b):
+def _subtract_histograms(n_bins, hist_a, hist_b):
     """Return hist_a - hist_b"""
 
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
@@ -56,8 +56,8 @@ def _subtract_ghc_histograms_unrolled(n_bins, hist_a, hist_b):
 
 
 @njit
-def _build_ghc_histogram_unrolled(n_bins, sample_indices, binned_feature,
-                                  ordered_gradients, ordered_hessians):
+def _build_histogram(n_bins, sample_indices, binned_feature, ordered_gradients,
+                     ordered_hessians):
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     n_node_samples = sample_indices.shape[0]
     unrolled_upper = (n_node_samples // 4) * 4
@@ -93,8 +93,8 @@ def _build_ghc_histogram_unrolled(n_bins, sample_indices, binned_feature,
 
 
 @njit
-def _build_gc_histogram_unrolled(n_bins, sample_indices, binned_feature,
-                                 ordered_gradients):
+def _build_histogram_no_hessian(n_bins, sample_indices, binned_feature,
+                                ordered_gradients):
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     n_node_samples = sample_indices.shape[0]
     unrolled_upper = (n_node_samples // 4) * 4
@@ -124,7 +124,7 @@ def _build_gc_histogram_unrolled(n_bins, sample_indices, binned_feature,
 
 
 @njit
-def _build_gc_root_histogram_unrolled(n_bins, binned_feature, all_gradients):
+def _build_histogram_root_no_hessian(n_bins, binned_feature, all_gradients):
     """Special case for the root node
 
     The root node has to find the a split among all the samples from the
@@ -160,8 +160,8 @@ def _build_gc_root_histogram_unrolled(n_bins, binned_feature, all_gradients):
 
 
 @njit
-def _build_ghc_root_histogram_unrolled(n_bins, binned_feature, all_gradients,
-                                       all_hessians):
+def _build_histogram_root(n_bins, binned_feature, all_gradients,
+                          all_hessians):
     """Special case for the root node
 
     The root node has to find the a split among all the samples from the

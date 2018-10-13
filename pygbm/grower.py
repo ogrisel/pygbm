@@ -18,10 +18,10 @@ class TreeNode:
     time = 0 # Computation time of the histograms, or more precisely time to
              # compute splitability, which may involve some useless
              # computations
-    ratio = 1  # sibling.time / node.time if node.fast, else 1
-    hist_subtraction = False # Whether histograms were computed with fast
-                             # method, i.e. using hist =
- # hist(parent) - hist(sibling)
+    ratio = 1  # sibling.time / node.time if node.hist_subtraction, else 1
+    hist_subtraction = False # Whether histograms were computed with
+                             # subtraction method, i.e. using hist =
+                             # hist(parent)- hist(sibling)
 
     def __init__(self, depth, sample_indices, sum_gradients, sum_hessians,
                  parent=None):
@@ -119,8 +119,9 @@ class TreeGrower:
 
         # Compute split_info and histograms if not already done
         if node.split_info is None and node.histograms is None:
-            # If the sibling has less samples, compute its hist first (with the
-            # slow method) and use the subtraction method for the current node
+            # If the sibling has less samples, compute its hist first (with
+            # the regular method) and use the subtraction method for the
+            # current node
             if node.sibling is not None:  # root has no sibling
                 n_samples_sibling = node.sibling.sample_indices.shape[0]
                 n_samples_node = node.sample_indices.shape[0]

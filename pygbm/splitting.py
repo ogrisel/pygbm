@@ -2,11 +2,11 @@
 import numpy as np
 from numba import (njit, jitclass, prange, float32, uint8, uint32, optional,
                    typeof)
-from .histogram import _build_ghc_histogram_unrolled
-from .histogram import _subtract_ghc_histograms_unrolled
-from .histogram import _build_gc_histogram_unrolled
-from .histogram import _build_ghc_root_histogram_unrolled
-from .histogram import _build_gc_root_histogram_unrolled
+from .histogram import _build_histogram
+from .histogram import _subtract_histograms
+from .histogram import _build_histogram_no_hessian
+from .histogram import _build_histogram_root
+from .histogram import _build_histogram_root_no_hessian
 from .histogram import HISTOGRAM_DTYPE
 
 
@@ -222,18 +222,18 @@ def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
 
     if root_node:
         if constant_hessian:
-            histogram = _build_gc_root_histogram_unrolled(
+            histogram = _build_histogram_root_no_hessian(
                 n_bins, binned_feature, ordered_gradients)
         else:
-            histogram = _build_ghc_root_histogram_unrolled(
+            histogram = _build_histogram_root(
                 n_bins, binned_feature, ordered_gradients,
                 ordered_hessians)
     else:
         if constant_hessian:
-            histogram = _build_gc_histogram_unrolled(
+            histogram = _build_histogram_no_hessian(
                 n_bins, sample_indices, binned_feature, ordered_gradients)
         else:
-            histogram = _build_ghc_histogram_unrolled(
+            histogram = _build_histogram(
                 n_bins, sample_indices, binned_feature, ordered_gradients,
                 ordered_hessians)
 
@@ -256,7 +256,7 @@ def _find_histogram_split_subtraction(feature_idx, binned_feature, n_bins,
     """Compute the histogram for a given feature and return the best bin to
     split on. Uses hist(parent) = hist(left) + hist(right)"""
 
-    histogram = _subtract_ghc_histograms_unrolled(
+    histogram = _subtract_histograms(
         n_bins, parent_histograms[feature_idx],
         sibling_histograms[feature_idx]
     )
