@@ -73,52 +73,6 @@ def test_histogram_sample_order_independence():
     assert_array_equal(hist_ghc['count'], hist_ghc_perm['count'])
 
 
-def test_compare_histograms():
-    # Check that hist_gch_root, hist_gc_root, hist_ghc and hist_gc are
-    # equivalent.
-
-    # Note for reviewer: I removed any mentioned of "optimized" as this can
-    # cause confusion now that we have the fast hist method. Also we can
-    # probably remove this test as it should now be covered in
-    # test_unrolled_equivalent_to_naive
-
-    rng = np.random.RandomState(42)
-    n_samples = 10
-    n_bins = 5
-    sample_indices = np.arange(n_samples).astype(np.uint32)
-    binned_feature = rng.randint(0, n_bins - 1, size=n_samples, dtype=np.uint8)
-    ordered_gradients = rng.randn(n_samples).astype(np.float32)
-    ordered_hessians = np.ones(n_samples, dtype=np.float32)
-
-    hist_gc_root = _build_gc_root_histogram_unrolled(n_bins, binned_feature,
-                                                     ordered_gradients)
-    hist_ghc_root = _build_ghc_root_histogram_unrolled(n_bins, binned_feature,
-                                                       ordered_gradients,
-                                                       ordered_hessians)
-    hist_gc = _build_gc_histogram_unrolled(n_bins, sample_indices,
-                                           binned_feature,
-                                           ordered_gradients)
-    hist_ghc = _build_ghc_histogram_unrolled(n_bins, sample_indices,
-                                             binned_feature,
-                                             ordered_gradients,
-                                             ordered_hessians)
-
-    assert_array_equal(hist_gc_root['count'], hist_gc['count'])
-    assert_allclose(hist_gc_root['sum_gradients'], hist_gc['sum_gradients'])
-
-    assert_array_equal(hist_gc_root['count'], hist_ghc_root['count'])
-    assert_allclose(hist_gc_root['sum_gradients'],
-                    hist_ghc_root['sum_gradients'])
-
-    assert_array_equal(hist_gc_root['count'], hist_ghc['count'])
-    assert_allclose(hist_gc_root['sum_gradients'], hist_ghc['sum_gradients'])
-
-    assert_allclose(hist_gc_root['sum_hessians'], np.zeros(n_bins))  # unused
-    assert_allclose(hist_ghc_root['sum_hessians'], hist_ghc_root['count'])
-    assert_allclose(hist_gc['sum_hessians'], np.zeros(n_bins))  # unused
-    assert_allclose(hist_ghc['sum_hessians'], hist_ghc['count'])
-
-
 def test_unrolled_equivalent_to_naive():
     # Make sure the different unrolled histogram computations give the same
     # results as the naive one.
