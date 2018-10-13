@@ -24,7 +24,7 @@ def plot_tree(est_pygbm, est_lightgbm=None, tree_index=0, view=True, **kwargs):
             for info in ('gain', 'value', 'count'):
                 label += r'\n{0}: {1}'.format(info, node[info])
             label += '\ntime: {0:.10f}'.format(node['time'])
-            label += '\nfast: {0}'.format(node['fast'])
+            label += '\nuse_sub: {0}'.format(node['use_sub'])
             label += '\nratio: {0}'.format(node['ratio'])
             label += '\nsum_g: {0}'.format(node['sum_g'])
             label += '\nsum_h: {0}'.format(node['sum_h'])

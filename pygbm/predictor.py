@@ -13,7 +13,7 @@ PREDICTOR_RECORD_DTYPE = np.dtype([
     ('right', np.uint32),
     ('gain', np.float32),
     ('depth', np.uint32),
-    ('fast', np.bool),
+    ('use_sub', np.bool),
     ('time', np.float32),
     ('ratio', np.float32),
     ('sum_g', np.float32),

@@ -19,8 +19,9 @@ class TreeNode:
              # compute splitability, which may involve some useless
              # computations
     ratio = 1  # sibling.time / node.time if node.fast, else 1
-    fast = False # Whether histograms were computed with fast method, i.e.
-                 # using hist = hist(parent) - hist(sibling)
+    hist_subtraction = False # Whether histograms were computed with fast
+                             # method, i.e. using hist =
+ # hist(parent) - hist(sibling)
 
     def __init__(self, depth, sample_indices, sum_gradients, sum_hessians,
                  parent=None):
@@ -119,18 +120,18 @@ class TreeGrower:
         # Compute split_info and histograms if not already done
         if node.split_info is None and node.histograms is None:
             # If the sibling has less samples, compute its hist first (with the
-            # slow method) and use the fast method for the current node
+            # slow method) and use the subtraction method for the current node
             if node.sibling is not None:  # root has no sibling
                 n_samples_sibling = node.sibling.sample_indices.shape[0]
                 n_samples_node = node.sample_indices.shape[0]
                 if n_samples_sibling < n_samples_node:
                     self._compute_spittability(node.sibling, only_hist=True)
-                    # As hist of sibling is now computed we'll use the fast
-                    # hist method for the current node.
-                    node.fast = True
+                    # As hist of sibling is now computed we'll use the hist
+                    # subtraction method for the current node.
+                    node.hist_subtraction = True
 
             tic = time()
-            if node.fast:
+            if node.hist_subtraction:
                 split_info, histograms = self.splitter.find_node_split_subtraction(
                     node.sample_indices, node.parent.histograms,
                     node.sibling.histograms)
@@ -139,7 +140,7 @@ class TreeGrower:
                     node.sample_indices)
             toc = time()
             node.time = toc - tic
-            if node.fast:
+            if node.hist_subtraction:
                 node.ratio = node.sibling.time / node.time
             node.split_info = split_info
             node.histograms = histograms
@@ -237,7 +238,7 @@ class TreeGrower:
         node = predictor_nodes[next_free_idx]
         node['count'] = grower_node.sample_indices.shape[0]
         node['depth'] = grower_node.depth
-        node['fast'] = grower_node.fast
+        node['use_sub'] = grower_node.hist_subtraction
         node['time'] = grower_node.time
         node['ratio'] = grower_node.ratio
         node['sum_g'] = grower_node.sum_gradients
