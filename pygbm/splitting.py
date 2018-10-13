@@ -297,7 +297,7 @@ def _find_best_bin_to_split_helper(feature_idx, n_bins, histogram,
             hessian_left += histogram[bin_idx]['sum_hessians']
         if hessian_left < min_hessian_to_split:
             continue
-        hessian_right = hessian- hessian_left
+        hessian_right = hessian - hessian_left
         if hessian_right < min_hessian_to_split:
             continue
         gradient_right = gradient - gradient_left
