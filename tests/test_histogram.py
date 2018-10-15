@@ -127,7 +127,6 @@ def test_hist_subtraction(constant_hessian):
         hist_parent = _build_histogram(n_bins, sample_indices, binned_feature,
                                        ordered_gradients, ordered_hessians)
 
-
     mask = rng.randint(0, 2, n_samples).astype(np.bool)
 
     sample_indices_left = sample_indices[mask]

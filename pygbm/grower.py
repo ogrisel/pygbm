@@ -15,13 +15,13 @@ class TreeNode:
     histograms = None  # array of histogram shape = (n_features, n_bins)
     sibling = None  # Link to sibling node, None for root
     parent = None  # Link to parent node, None for root
-    time = 0 # Computation time of the histograms, or more precisely time to
-             # compute splitability, which may involve some useless
-             # computations
+    # Computation time of the histograms, or more precisely time to compute
+    # splitability, which may involve some useless computations
+    time = 0
     ratio = 1  # sibling.time / node.time if node.hist_subtraction, else 1
-    hist_subtraction = False # Whether histograms were computed with
-                             # subtraction method, i.e. using hist =
-                             # hist(parent)- hist(sibling)
+    # Whether histograms were computed with subtraction method, i.e. using
+    # hist = hist(parent)- hist(sibling)
+    hist_subtraction = False
 
     def __init__(self, depth, sample_indices, sum_gradients, sum_hessians,
                  parent=None):
@@ -133,11 +133,14 @@ class TreeGrower:
 
             tic = time()
             if node.hist_subtraction:
-                gradient = node.parent.sum_gradients - node.sibling.sum_gradients
+                gradient = (node.parent.sum_gradients -
+                            node.sibling.sum_gradients)
                 hessian = node.parent.sum_hessians - node.sibling.sum_hessians
-                split_info, histograms = self.splitter.find_node_split_subtraction(
-                    node.sample_indices, node.parent.histograms,
-                    node.sibling.histograms, gradient, hessian)
+                split_info, histograms = (
+                    self.splitter.find_node_split_subtraction(
+                        node.sample_indices, node.parent.histograms,
+                        node.sibling.histograms, gradient, hessian)
+                )
             else:
                 split_info, histograms = self.splitter.find_node_split(
                     node.sample_indices)

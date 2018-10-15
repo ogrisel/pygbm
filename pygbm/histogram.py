@@ -27,30 +27,34 @@ def _subtract_histograms(n_bins, hist_a, hist_b):
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     unrolled_upper = (n_bins // 4) * 4
 
+    sg = 'sum_gradients'
+    sh = 'sum_hessians'
+    c = 'count'
+
     for i in range(0, unrolled_upper, 4):
         bin_0 = i
         bin_1 = i + 1
         bin_2 = i + 2
         bin_3 = i + 3
-        histogram[bin_0]['sum_gradients'] = hist_a[bin_0]['sum_gradients'] - hist_b[bin_0]['sum_gradients']
-        histogram[bin_1]['sum_gradients'] = hist_a[bin_1]['sum_gradients'] - hist_b[bin_1]['sum_gradients']
-        histogram[bin_2]['sum_gradients'] = hist_a[bin_2]['sum_gradients'] - hist_b[bin_2]['sum_gradients']
-        histogram[bin_3]['sum_gradients'] = hist_a[bin_3]['sum_gradients'] - hist_b[bin_3]['sum_gradients']
+        histogram[bin_0][sg] = hist_a[bin_0][sg] - hist_b[bin_0][sg]
+        histogram[bin_1][sg] = hist_a[bin_1][sg] - hist_b[bin_1][sg]
+        histogram[bin_2][sg] = hist_a[bin_2][sg] - hist_b[bin_2][sg]
+        histogram[bin_3][sg] = hist_a[bin_3][sg] - hist_b[bin_3][sg]
 
-        histogram[bin_0]['sum_hessians'] = hist_a[bin_0]['sum_hessians'] - hist_b[bin_0]['sum_hessians']
-        histogram[bin_1]['sum_hessians'] = hist_a[bin_1]['sum_hessians'] - hist_b[bin_1]['sum_hessians']
-        histogram[bin_2]['sum_hessians'] = hist_a[bin_2]['sum_hessians'] - hist_b[bin_2]['sum_hessians']
-        histogram[bin_3]['sum_hessians'] = hist_a[bin_3]['sum_hessians'] - hist_b[bin_3]['sum_hessians']
+        histogram[bin_0][sh] = hist_a[bin_0][sh] - hist_b[bin_0][sh]
+        histogram[bin_1][sh] = hist_a[bin_1][sh] - hist_b[bin_1][sh]
+        histogram[bin_2][sh] = hist_a[bin_2][sh] - hist_b[bin_2][sh]
+        histogram[bin_3][sh] = hist_a[bin_3][sh] - hist_b[bin_3][sh]
 
-        histogram[bin_0]['count'] = hist_a[bin_0]['count'] - hist_b[bin_0]['count']
-        histogram[bin_1]['count'] = hist_a[bin_1]['count'] - hist_b[bin_1]['count']
-        histogram[bin_2]['count'] = hist_a[bin_2]['count'] - hist_b[bin_2]['count']
-        histogram[bin_3]['count'] = hist_a[bin_3]['count'] - hist_b[bin_3]['count']
+        histogram[bin_0][c] = hist_a[bin_0][c] - hist_b[bin_0][c]
+        histogram[bin_1][c] = hist_a[bin_1][c] - hist_b[bin_1][c]
+        histogram[bin_2][c] = hist_a[bin_2][c] - hist_b[bin_2][c]
+        histogram[bin_3][c] = hist_a[bin_3][c] - hist_b[bin_3][c]
 
     for i in range(unrolled_upper, n_bins):
-        histogram[i]['sum_gradients'] = hist_a[i]['sum_gradients'] - hist_b[i]['sum_gradients']
-        histogram[i]['sum_hessians'] = hist_a[i]['sum_hessians'] - hist_b[i]['sum_hessians']
-        histogram[i]['count'] = hist_a[i]['count'] - hist_b[i]['count']
+        histogram[i][sg] = hist_a[i][sg] - hist_b[i][sg]
+        histogram[i][sh] = hist_a[i][sh] - hist_b[i][sh]
+        histogram[i][c] = hist_a[i][c] - hist_b[i][c]
 
     return histogram
 

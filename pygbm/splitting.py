@@ -1,7 +1,6 @@
 # from collections import namedtuple
 import numpy as np
-from numba import (njit, jitclass, prange, float32, uint8, uint32, optional,
-                   typeof)
+from numba import njit, jitclass, prange, float32, uint8, uint32, typeof
 from .histogram import _build_histogram
 from .histogram import _subtract_histograms
 from .histogram import _build_histogram_no_hessian
@@ -151,7 +150,7 @@ def _find_best_feature_to_split_helper(n_features, n_bins, split_infos):
     # need to convert to int64, it's a numba bug. See issue #2756
     histograms = np.empty(
         shape=(np.int64(n_features), np.int64(n_bins)),
-    dtype=HISTOGRAM_DTYPE
+        dtype=HISTOGRAM_DTYPE
     )
     for i, split_info in enumerate(split_infos):
         histograms[i, :] = split_info.histogram
@@ -160,7 +159,7 @@ def _find_best_feature_to_split_helper(n_features, n_bins, split_infos):
             best_gain = gain
             best_split_info = split_info
     return best_split_info, histograms
-   
+
 
 @njit(parallel=True)
 def _parallel_find_split(sample_indices, ordered_gradients, ordered_hessians,
@@ -290,7 +289,8 @@ def _find_best_bin_to_split_helper(feature_idx, n_bins, histogram,
     for bin_idx in range(n_bins):
         gradient_left += histogram[bin_idx]['sum_gradients']
         if constant_hessian:
-            hessian_left += histogram[bin_idx]['count'] * constant_hessian_value
+            hessian_left += (histogram[bin_idx]['count'] *
+                             constant_hessian_value)
         else:
             hessian_left += histogram[bin_idx]['sum_hessians']
         if hessian_left < min_hessian_to_split:
