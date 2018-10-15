@@ -96,7 +96,7 @@ class TreeGrower:
         n_samples = self.features_data.shape[0]
         depth = 0
         if self.splitter.constant_hessian:
-            hessian = self.splitter.all_hessians * n_samples
+            hessian = self.splitter.all_hessians[0] * n_samples
         else:
             hessian = self.splitter.all_hessians.sum()
         self.root = TreeNode(depth, np.arange(n_samples, dtype=np.uint32),
