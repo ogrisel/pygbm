@@ -120,13 +120,22 @@ class HistogramSplitter:
             hessian)
 
     def find_node_split_subtraction(self, sample_indices, parent_histograms,
-                                    sibling_histograms, gradient, hessian):
+                                    sibling_histograms):
 
-        # hessian of a single sample, if constant (else, it's ignored)
+        # We can pick any feature (here the first) in the histograms to
+        # compute the gradients: they must be the same across all features
+        # anyway, we have tests ensuring this. Maybe a more robust way would
+        # be to compute an average but it's probably not worth it.
+        gradient = (parent_histograms[0]['sum_gradients'].sum() -
+                    sibling_histograms[0]['sum_gradients'].sum())
+
         if self.constant_hessian:
-            constant_hessian_value = self.all_hessians[0]
+            constant_hessian_value = self.all_hessians[0]  # h for 1 sample
+            hessian = constant_hessian_value * sample_indices.shape[0]
         else:
-            constant_hessian_value = 0.
+            constant_hessian_value = 0.  # won't be used anyway
+            hessian = (parent_histograms[0]['sum_hessians'].sum() -
+                       sibling_histograms[0]['sum_hessians'].sum())
 
         return _parallel_find_split_subtraction(
             sample_indices,

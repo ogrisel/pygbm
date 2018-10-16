@@ -133,13 +133,10 @@ class TreeGrower:
 
             tic = time()
             if node.hist_subtraction:
-                gradient = (node.parent.sum_gradients -
-                            node.sibling.sum_gradients)
-                hessian = node.parent.sum_hessians - node.sibling.sum_hessians
                 split_info, histograms = (
                     self.splitter.find_node_split_subtraction(
                         node.sample_indices, node.parent.histograms,
-                        node.sibling.histograms, gradient, hessian)
+                        node.sibling.histograms)
                 )
             else:
                 split_info, histograms = self.splitter.find_node_split(

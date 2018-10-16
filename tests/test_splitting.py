@@ -73,18 +73,12 @@ def test_split_vs_split_subtraction(constant_hessian):
     si_right, hists_right = splitter.find_node_split(sample_indices_right)
 
     # split left with subtraction method
-    gradient_left = si_left.gradient_left + si_left.gradient_right
-    hessian_left = si_left.hessian_left + si_left.hessian_right
     si_left_sub, hists_left_sub = splitter.find_node_split_subtraction(
-        sample_indices_left, hists_parent, hists_right, gradient_left,
-        hessian_left)
+        sample_indices_left, hists_parent, hists_right)
 
     # split right with subtraction method
-    gradient_right = si_right.gradient_left + si_right.gradient_right
-    hessian_right = si_right.hessian_left + si_right.hessian_right
     si_right_sub, hists_right_sub = splitter.find_node_split_subtraction(
-        sample_indices_right, hists_parent, hists_left, gradient_right,
-        hessian_right)
+        sample_indices_right, hists_parent, hists_left)
 
     # make sure histograms from classical and subtraction method are the same
     for hists, hists_sub in ((hists_left, hists_left_sub),
@@ -95,13 +89,13 @@ def test_split_vs_split_subtraction(constant_hessian):
 
     # make sure split_infos from classical and subtraction method are the same
     for si, si_sub in ((si_left, si_left_sub), (si_right, si_right_sub)):
-        assert_almost_equal(si.gain, si_sub.gain, decimal=4)
-        assert_almost_equal(si.feature_idx, si_sub.feature_idx, decimal=4)
-        assert_almost_equal(si.gradient_left, si_sub.gradient_left, decimal=4)
+        assert_almost_equal(si.gain, si_sub.gain, decimal=3)
+        assert_almost_equal(si.feature_idx, si_sub.feature_idx, decimal=3)
+        assert_almost_equal(si.gradient_left, si_sub.gradient_left, decimal=3)
         assert_almost_equal(si.gradient_right, si_sub.gradient_right,
-                            decimal=4)
-        assert_almost_equal(si.hessian_right, si_sub.hessian_right, decimal=4)
-        assert_almost_equal(si.hessian_left, si_sub.hessian_left, decimal=4)
+                            decimal=3)
+        assert_almost_equal(si.hessian_right, si_sub.hessian_right, decimal=3)
+        assert_almost_equal(si.hessian_left, si_sub.hessian_left, decimal=3)
 
 
 @pytest.mark.parametrize('constant_hessian', [True, False])
@@ -153,18 +147,12 @@ def test_gradient_and_hessian_sanity(constant_hessian):
     si_right, hists_right = splitter.find_node_split(sample_indices_right)
 
     # split left with subtraction method
-    gradient_left = si_left.gradient_left + si_left.gradient_right
-    hessian_left = si_left.hessian_left + si_left.hessian_right
     si_left_sub, hists_left_sub = splitter.find_node_split_subtraction(
-        sample_indices_left, hists_parent, hists_right, gradient_left,
-        hessian_left)
+        sample_indices_left, hists_parent, hists_right)
 
     # split right with subtraction method
-    gradient_right = si_right.gradient_left + si_right.gradient_right
-    hessian_right = si_right.hessian_left + si_right.hessian_right
     si_right_sub, hists_right_sub = splitter.find_node_split_subtraction(
-        sample_indices_right, hists_parent, hists_left, gradient_right,
-        hessian_right)
+        sample_indices_right, hists_parent, hists_left)
 
     # make sure that si.gradient_left + si.gradient_right have their expected
     # value, same for hessians
