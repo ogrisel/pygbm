@@ -72,7 +72,8 @@ def test_histogram_sample_order_independence():
     assert_array_equal(hist_ghc['count'], hist_ghc_perm['count'])
 
 
-def test_unrolled_equivalent_to_naive():
+@pytest.mark.parametrize("constant_hessian", [True, False])
+def test_unrolled_equivalent_to_naive(constant_hessian):
     # Make sure the different unrolled histogram computations give the same
     # results as the naive one.
     rng = np.random.RandomState(42)
@@ -81,7 +82,10 @@ def test_unrolled_equivalent_to_naive():
     sample_indices = np.arange(n_samples).astype(np.uint32)
     binned_feature = rng.randint(0, n_bins - 1, size=n_samples, dtype=np.uint8)
     ordered_gradients = rng.randn(n_samples).astype(np.float32)
-    ordered_hessians = np.ones(n_samples, dtype=np.float32)
+    if constant_hessian:
+        ordered_hessians = np.ones(1, dtype=np.float32)
+    else:
+        ordered_hessians = rng.lognormal(size=n_samples).astype(np.float32)
 
     hist_gc_root = _build_histogram_root_no_hessian(n_bins, binned_feature,
                                                     ordered_gradients)
