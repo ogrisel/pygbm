@@ -83,7 +83,7 @@ def test_unrolled_equivalent_to_naive(constant_hessian):
     binned_feature = rng.randint(0, n_bins - 1, size=n_samples, dtype=np.uint8)
     ordered_gradients = rng.randn(n_samples).astype(np.float32)
     if constant_hessian:
-        ordered_hessians = np.ones(1, dtype=np.float32)
+        ordered_hessians = np.ones(n_samples, dtype=np.float32)
     else:
         ordered_hessians = rng.lognormal(size=n_samples).astype(np.float32)
 
