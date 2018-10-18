@@ -104,16 +104,16 @@ def test_gradient_and_hessian_sanity(constant_hessian):
     # consistent in different places:
     # - in split_info: si.gradient_left + si.gradient_right must be equal to
     #   the gradient at the node. Same for hessians.
-    # - in the histograms: summing 'sum_gradients' over the bins must constant
-    #   across all features, and those sums must be equal to the node's
-    #   gradient. Same for hessians.
+    # - in the histograms: summing 'sum_gradients' over the bins must be
+    #   constant across all features, and those sums must be equal to the
+    #   node's gradient. Same for hessians.
     #
     # These checks are carried out for split_info and histograms resulting
     # from both find_node_split() and find_node_split_subtraction().
     #
     # The structure of this test is exactly the same as in
-    #   test_split_vs_split_subtraction() but it's probably best to keep them
-    #   separate, after all their not checking the same things.
+    # test_split_vs_split_subtraction() but it's probably best to keep them
+    # separate because they're not checking the same things.
 
     rng = np.random.RandomState(42)
 
