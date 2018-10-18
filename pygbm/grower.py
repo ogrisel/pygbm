@@ -247,9 +247,6 @@ class TreeGrower:
         node['count'] = grower_node.sample_indices.shape[0]
         node['depth'] = grower_node.depth
         node['use_sub'] = grower_node.hist_subtraction
-        node['time'] = grower_node.find_split_time
-        node['sum_g'] = grower_node.sum_gradients
-        node['sum_h'] = grower_node.sum_hessians
         if grower_node.split_info is not None:
             node['gain'] = grower_node.split_info.gain
         else:
@@ -269,7 +266,6 @@ class TreeGrower:
             if bin_thresholds is not None:
                 threshold = bin_thresholds[feature_idx][bin_idx]
                 node['threshold'] = threshold
-                node['gain'] = split_info.gain
             next_free_idx += 1
 
             node['left'] = next_free_idx

@@ -20,16 +20,11 @@ def plot_tree(est_pygbm, est_lightgbm=None, tree_index=0, view=True, **kwargs):
             name = 'split__{0}'.format(node_idx)
             label = '\nsplit_feature_index: {0}'.format(
                 node['feature_idx'])
-            label += r'\nthreshold: {0}'.format(node['threshold'])
-            for info in ('gain', 'value', 'count'):
-                label += r'\n{0}: {1}'.format(info, node[info])
-            label += '\ntime: {0:.10f}'.format(node['time'])
+            label += r'\nthreshold: {:.4f}'.format(node['threshold'])
+            label += r'\ngain: {:.4f}'.format(node['gain'])
+            label += r'\nvalue: {:.4f}'.format(node['value'])
+            label += r'\ncount: {}'.format(node['count'])
             label += '\nuse_sub: {0}'.format(node['use_sub'])
-            label += '\nratio: {0}'.format(node['ratio'])
-            label += '\nsum_g: {0}'.format(node['sum_g'])
-            label += '\nsum_h: {0}'.format(node['sum_h'])
-            if node['is_leaf']:
-                label += '\nleaf_index: {0}'.format(node_idx)
 
             graph.node(name, label=label)
             if not node['is_leaf']:
