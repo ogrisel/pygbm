@@ -32,6 +32,10 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
 
     def fit(self, X, y):
         fit_start_time = time()
+        acc_find_split_time = 0.  # time spent finding the best splits
+        acc_apply_split_time = 0.  # time spent splitting nodes
+        # time spent predicting X for gradient and hessians update
+        acc_prediction_time = 0.
         # TODO: add support for mixed-typed (numerical + categorical) data
         # TODO: add support for missing data
         # TODO: add support for pre-binned data (pass-through)?
@@ -100,12 +104,24 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
                 bin_thresholds=self.bin_mapper_.bin_thresholds_)
             predictors.append(predictor)
             self.n_iter_ += 1
+            tic_pred = time()
             gradients -= predictor.predict_binned(X_binned_train)
+            toc_pred = time()
+            acc_prediction_time += toc_pred - tic_pred
+
+            acc_apply_split_time += grower.total_apply_split_time
+            acc_find_split_time += grower.total_find_split_time
         if self.verbose:
             duration = time() - fit_start_time
             n_leaf_nodes = sum(p.get_n_leaf_nodes() for p in self.predictors_)
             print(f"Fit {len(self.predictors_)} trees in {duration:.3f} s, "
                   f"({n_leaf_nodes} total leaf nodes)")
+            print('{:<32} {:.3f}s'.format('Time spent finding best splits:',
+                                          acc_find_split_time))
+            print('{:<32} {:.3f}s'.format('Time spent applying splits:',
+                                          acc_apply_split_time))
+            print('{:<32} {:.3f}s'.format('Time spent predicting:',
+                                          acc_prediction_time))
         self.train_scores_ = np.asarray(self.train_scores_)
         if self.validation_split is not None:
             self.validation_scores_ = np.asarray(self.validation_scores_)

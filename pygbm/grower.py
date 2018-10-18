@@ -15,12 +15,10 @@ class TreeNode:
     histograms = None  # array of histogram shape = (n_features, n_bins)
     sibling = None  # Link to sibling node, None for root
     parent = None  # Link to parent node, None for root
-    # Computation time of the histograms, or more precisely time to compute
-    # splitability, which may involve some useless computations
-    time = 0
-    ratio = 1  # sibling.time / node.time if node.hist_subtraction, else 1
-    # Whether histograms were computed with subtraction method, i.e. using
-    # hist = hist(parent)- hist(sibling)
+    find_split_time = 0.  # time spent finding the best split
+    construction_speed = 0.  # number of samples / find_split_time 
+    apply_split_time = 0.  # time spent splitting the node
+    # wheter the subtraction method was used for histogram computation
     hist_subtraction = False
 
     def __init__(self, depth, sample_indices, sum_gradients, sum_hessians,
@@ -85,6 +83,8 @@ class TreeGrower:
         self.shrinkage = shrinkage
         self.splittable_nodes = []
         self.finalized_leaves = []
+        self.total_find_split_time = 0.  # time spent finding the best splits
+        self.total_apply_split_time = 0.  # time spent splitting nodes
         self._intilialize_root()
         self.n_nodes = 1
 
@@ -142,9 +142,10 @@ class TreeGrower:
                 split_info, histograms = self.splitter.find_node_split(
                     node.sample_indices)
             toc = time()
-            node.time = toc - tic
-            if node.hist_subtraction:
-                node.ratio = node.sibling.time / node.time
+            node.find_split_time = toc - tic
+            self.total_find_split_time += node.find_split_time
+            node.construction_speed = (node.sample_indices.shape[0] /
+                                       node.find_split_time)
             node.split_info = split_info
             node.histograms = histograms
 
@@ -169,8 +170,12 @@ class TreeGrower:
         # Consider the node with the highest loss reduction (a.k.a. gain)
         node = heappop(self.splittable_nodes)
 
+        tic = time()
         sample_indices_left, sample_indices_right = \
             self.splitter.split_indices(node.sample_indices, node.split_info)
+        toc = time()
+        node.apply_split_time = toc - tic
+        self.total_apply_split_time += node.apply_split_time
 
         depth = node.depth + 1
         n_leaf_nodes = len(self.finalized_leaves) + len(self.splittable_nodes)
@@ -242,8 +247,7 @@ class TreeGrower:
         node['count'] = grower_node.sample_indices.shape[0]
         node['depth'] = grower_node.depth
         node['use_sub'] = grower_node.hist_subtraction
-        node['time'] = grower_node.time
-        node['ratio'] = grower_node.ratio
+        node['time'] = grower_node.find_split_time
         node['sum_g'] = grower_node.sum_gradients
         node['sum_h'] = grower_node.sum_hessians
         if grower_node.split_info is not None:
