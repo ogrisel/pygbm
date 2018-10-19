@@ -23,7 +23,11 @@ X_binned = bin_mapper_.fit_transform(X)
 gradients = np.asarray(y, dtype=np.float32).copy()
 hessians = np.ones(1, dtype=np.float32)
 
+# First run to trigger the compilation of numba jit methods to avoid recording
+# the compiler overhead in the profile report.
+TreeGrower(X_binned, gradients, hessians, max_leaf_nodes=n_leaf_nodes).grow()
+
+# New run with to collect timing statistics that will be included in the plot.
 grower = TreeGrower(X_binned, gradients, hessians, max_leaf_nodes=n_leaf_nodes)
 grower.grow()
-
 plotting.plot_tree(grower)
