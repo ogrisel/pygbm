@@ -7,7 +7,7 @@ from pygbm.plotting import plot_tree
 from pygbm import GradientBoostingMachine
 
 
-X, y = make_classification(n_samples=int(1e3), n_classes=2, n_features=5,
+X, y = make_classification(n_samples=150, n_classes=2, n_features=5,
                            n_informative=3, n_redundant=0,
                            random_state=0)
 
