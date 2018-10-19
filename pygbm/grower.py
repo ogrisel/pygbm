@@ -246,7 +246,6 @@ class TreeGrower:
         node = predictor_nodes[next_free_idx]
         node['count'] = grower_node.sample_indices.shape[0]
         node['depth'] = grower_node.depth
-        node['use_sub'] = grower_node.hist_subtraction
         if grower_node.split_info is not None:
             node['gain'] = grower_node.split_info.gain
         else:

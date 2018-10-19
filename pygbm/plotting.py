@@ -4,35 +4,36 @@ from pygbm import GradientBoostingMachine
 import pygbm
 
 
-def plot_tree(est_or_grower, est_lightgbm=None, tree_index=0, view=True, **kwargs):
-    """Plot the i'th predictor tree of a GradientBoostingMachine instance,
-    or the tree of a TreeGrower. Can also plot a LightGBM estimator (on the
-    left) for comparison.
+def plot_tree(est_or_grower, est_lightgbm=None, tree_index=0, view=True,
+              **kwargs):
+    """Plot the i'th predictor tree of a GBM or a grower tree
 
     est_or_grower can either be a GradientBoostingMachine instance or a
-    TreeGrower. In this case tree_index is ignored, and more debugging info are
-    displayed.
+    TreeGrower. In this latter case tree_index is ignored, and more debugging
+    info are displayed. Trees displayed from TreeGrower has additional
+    profiling information that are not kept in the predictor trees that
+    result from fitting a GradientBoostingMachine.
+
+    Can also plot a LightGBM estimator (on the left) for comparison.
 
     Requires matplotlib and graphviz (both python package and binary program).
 
     kwargs are passed to graphviz.Digraph()
 
-    Example:
-    plotting.plot_tree(est_pygbm, est_lightgbm, view=False, filename='output')
-    will silently save output to output.pdf
+    Example: plotting.plot_tree(est_pygbm, est_lightgbm, view=False,
+    filename='output') will silently save output to output.pdf
     """
     def make_pygbm_tree():
         def add_predictor_node(node_idx, parent=None, decision=None):
             predictor_tree = est_or_grower.predictors_[tree_index]
             node = predictor_tree.nodes[node_idx]
-            name = 'split__{0}'.format(node_idx)
-            label = '\nsplit_feature_index: {0}'.format(
+            name = 'split__{}'.format(node_idx)
+            label = 'split_feature_index: {}'.format(
                 node['feature_idx'])
-            label += r'\nthreshold: {:.4f}'.format(node['threshold'])
-            label += r'\ngain: {:.4f}'.format(node['gain'])
-            label += r'\nvalue: {:.4f}'.format(node['value'])
-            label += r'\ncount: {}'.format(node['count'])
-            label += '\nuse_sub: {0}'.format(node['use_sub'])
+            label += r'\nthreshold: {:.3f}'.format(node['threshold'])
+            label += r'\ngain: {:.3E}'.format(node['gain'])
+            label += r'\nvalue: {:.3f}'.format(node['value'])
+            label += r'\ncount: {:,}'.format(node['count'])
 
             graph.node(name, label=label)
             if not node['is_leaf']:
@@ -59,19 +60,19 @@ def plot_tree(est_or_grower, est_lightgbm=None, tree_index=0, view=True, **kwarg
                 sum_hessians = si.hessian_left + si.hessian_right
 
             value = 0. if node.value is None else node.value
-            label = '\nsplit_feature_index: {0}'.format(feature_idx)
-            label += r'\nbin threshold: {:.4f}'.format(bin_idx)
-            label += r'\ngain: {:.4f}'.format(gain)
-            label += r'\nvalue: {:.4f}'.format(value)
-            label += r'\ncount: {}'.format(node.sample_indices.shape[0])
-            label += '\nuse_sub: {0}'.format(node.hist_subtraction)
-            label += r'\nsum_gradients: {:.4f}'.format(sum_gradients)
-            label += r'\nsum_hessians: {:.4f}'.format(sum_hessians)
-            label += r'\nfind_split_time: {:.4f}'.format(node.find_split_time)
-            label += r'\ncstr_speed: {:,} x 1e3'.format(
-                int(node.construction_speed // 1e3))
-            label += r'\napply_split_time: {:.4f}'.format(
+            label = 'split_feature_index: {}'.format(feature_idx)
+            label += r'\nbin threshold: {}'.format(bin_idx)
+            label += r'\ngain: {:.3E}'.format(gain)
+            label += r'\nvalue: {:.3f}'.format(value)
+            label += r'\ncount: {:,}'.format(node.sample_indices.shape[0])
+            label += r'\nhist substration: {}'.format(node.hist_subtraction)
+            label += r'\nhist speed: {:.3E}'.format(
+                node.construction_speed)
+            label += r'\nfind split time: {:.4f}'.format(node.find_split_time)
+            label += r'\napply split time: {:.4f}'.format(
                 node.apply_split_time)
+            label += r'\nsum gradients: {:.3E}'.format(sum_gradients)
+            label += r'\nsum hessians: {:.3E}'.format(sum_hessians)
 
             graph.node(name, label=label)
             if node.value is None:  # not a leaf node
