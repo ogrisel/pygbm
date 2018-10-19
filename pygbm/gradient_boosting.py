@@ -14,7 +14,8 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
     def __init__(self, learning_rate=0.1, max_iter=100, max_leaf_nodes=31,
                  max_depth=None, min_samples_leaf=20,
                  l2_regularization=0., max_bins=255,
-                 max_no_improvement=5, validation_split=0.1, scoring='neg_mse',
+                 max_no_improvement=5, validation_split=0.1,
+                 scoring='neg_mean_squared_error',
                  tol=1e-7, verbose=0, random_state=None):
         self.learning_rate = learning_rate
         self.max_iter = max_iter
