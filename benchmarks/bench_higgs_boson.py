@@ -13,9 +13,6 @@ from pygbm import GradientBoostingMachine
 from lightgbm import LGBMRegressor
 import numba
 
-if hasattr(numba.config, 'THREADING_LAYER'):
-    numba.config.THREADING_LAYER = 'safe'  # TBB
-
 
 HERE = os.path.dirname(__file__)
 URL = ("https://archive.ics.uci.edu/ml/machine-learning-databases/00280/"
