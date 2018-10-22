@@ -39,6 +39,7 @@ class SplitInfo:
     ('all_gradients', float32[::1]),
     ('all_hessians', float32[::1]),
     ('constant_hessian', uint8),
+    ('constant_hessian_value', float32),
     ('l2_regularization', float32),
     ('min_hessian_to_split', float32),
 ])
@@ -54,6 +55,10 @@ class HistogramSplitter:
         self.constant_hessian = all_hessians.shape[0] == 1
         self.l2_regularization = l2_regularization
         self.min_hessian_to_split = min_hessian_to_split
+        if self.constant_hessian:
+            self.constant_hessian_value = self.all_hessians[0]  # 1 scalar
+        else:
+            self.constant_hessian_value = float32(1.)  # won't be used anyway
 
     def split_indices(self, sample_indices, split_info):
         binned_feature = self.binned_features.T[split_info.feature_idx]
@@ -97,10 +102,9 @@ class HistogramSplitter:
                     ordered_hessians[i] = self.all_hessians[sample_idx]
 
         if self.constant_hessian:
-            constant_hessian_value = self.all_hessians[0]  # h for 1 sample
-            hessian = constant_hessian_value * sample_indices.shape[0]
+            n_samples = sample_indices.shape[0]
+            hessian = self.constant_hessian_value * float32(n_samples)
         else:
-            constant_hessian_value = 0.  # won't be used anyway
             hessian = ordered_hessians.sum()
 
         gradient = ordered_gradients.sum()
@@ -115,7 +119,7 @@ class HistogramSplitter:
             self.l2_regularization,
             self.min_hessian_to_split,
             self.constant_hessian,
-            constant_hessian_value,
+            self.constant_hessian_value,
             gradient,
             hessian)
 
@@ -130,10 +134,9 @@ class HistogramSplitter:
                     sibling_histograms[0]['sum_gradients'].sum())
 
         if self.constant_hessian:
-            constant_hessian_value = self.all_hessians[0]  # h for 1 sample
-            hessian = constant_hessian_value * sample_indices.shape[0]
+            n_samples = sample_indices.shape[0]
+            hessian = self.constant_hessian_value * float32(n_samples)
         else:
-            constant_hessian_value = 0.  # won't be used anyway
             hessian = (parent_histograms[0]['sum_hessians'].sum() -
                        sibling_histograms[0]['sum_hessians'].sum())
 
@@ -147,14 +150,13 @@ class HistogramSplitter:
             parent_histograms,
             sibling_histograms,
             self.constant_hessian,
-            constant_hessian_value,
+            self.constant_hessian_value,
             gradient,
             hessian)
 
 
-@njit()
+@njit
 def _find_best_feature_to_split_helper(n_features, n_bins, split_infos):
-
     best_gain = None
     # need to convert to int64, it's a numba bug. See issue #2756
     histograms = np.empty(
@@ -179,7 +181,8 @@ def _parallel_find_split(sample_indices, ordered_gradients, ordered_hessians,
     """For each feature, find the best bin to split on with
     _find_histogram_split. Returns the best SplitInfo among all features,
     along with all the feature histograms."""
-    # Pre-allocate the results datastructure to be able to use prange
+    # Pre-allocate the results datastructure to be able to use prange:
+    # numba jitclass do not seem to properly support default values for kwargs.
     split_infos = [SplitInfo(0, 0, 0, 0., 0., 0., 0.)
                    for i in range(n_features)]
     for feature_idx in prange(n_features):
@@ -255,9 +258,7 @@ def _find_histogram_split(feature_idx, binned_feature, n_bins, sample_indices,
     )
 
 
-@njit(locals={'histogram': typeof(HISTOGRAM_DTYPE)[:],
-              'gradient': float32,
-              'hessian': float32},
+@njit(locals={'histogram': typeof(HISTOGRAM_DTYPE)[:]},
       fastmath=True)
 def _find_histogram_split_subtraction(feature_idx, binned_feature, n_bins,
                                       sample_indices, l2_regularization,
