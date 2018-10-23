@@ -101,17 +101,16 @@ class HistogramSplitter:
                     ordered_gradients[i] = self.all_gradients[sample_idx]
                     ordered_hessians[i] = self.all_hessians[sample_idx]
 
+        sum_gradients = ordered_gradients.sum()
         if self.constant_hessian:
             n_samples = sample_indices.shape[0]
-            hessian = self.constant_hessian_value * float32(n_samples)
+            sum_hessians = self.constant_hessian_value * float32(n_samples)
         else:
-            hessian = ordered_hessians.sum()
-
-        gradient = ordered_gradients.sum()
+            sum_hessians = ordered_hessians.sum()
 
         return _parallel_find_split(
             self, sample_indices, ordered_gradients, ordered_hessians,
-            gradient, hessian)
+            sum_gradients, sum_hessians)
 
     def find_node_split_subtraction(self, sample_indices, parent_histograms,
                                     sibling_histograms):
@@ -120,18 +119,19 @@ class HistogramSplitter:
         # compute the gradients: they must be the same across all features
         # anyway, we have tests ensuring this. Maybe a more robust way would
         # be to compute an average but it's probably not worth it.
-        gradient = (parent_histograms[0]['sum_gradients'].sum() -
-                    sibling_histograms[0]['sum_gradients'].sum())
+        sum_gradients = (parent_histograms[0]['sum_gradients'].sum() -
+                         sibling_histograms[0]['sum_gradients'].sum())
 
         if self.constant_hessian:
             n_samples = sample_indices.shape[0]
-            hessian = self.constant_hessian_value * float32(n_samples)
+            sum_hessians = self.constant_hessian_value * float32(n_samples)
         else:
-            hessian = (parent_histograms[0]['sum_hessians'].sum() -
-                       sibling_histograms[0]['sum_hessians'].sum())
+            sum_hessians = (parent_histograms[0]['sum_hessians'].sum() -
+                            sibling_histograms[0]['sum_hessians'].sum())
 
         return _parallel_find_split_subtraction(
-            self, parent_histograms, sibling_histograms, gradient, hessian)
+            self, parent_histograms, sibling_histograms,
+            sum_gradients, sum_hessians)
 
 
 @njit
@@ -153,7 +153,7 @@ def _find_best_feature_to_split_helper(n_features, n_bins, split_infos):
 
 @njit(parallel=True)
 def _parallel_find_split(splitter, sample_indices, ordered_gradients,
-                         ordered_hessians, gradient, hessian):
+                         ordered_hessians, sum_gradients, sum_hessians):
     """For each feature, find the best bin to split on by scanning data.
 
     This is done by calling _find_histogram_split that compute histograms
@@ -170,7 +170,7 @@ def _parallel_find_split(splitter, sample_indices, ordered_gradients,
     for feature_idx in prange(splitter.n_features):
         split_info = _find_histogram_split(
             splitter, feature_idx, sample_indices,
-            ordered_gradients, ordered_hessians, gradient, hessian)
+            ordered_gradients, ordered_hessians, sum_gradients, sum_hessians)
         split_infos[feature_idx] = split_info
 
     return _find_best_feature_to_split_helper(
@@ -179,7 +179,8 @@ def _parallel_find_split(splitter, sample_indices, ordered_gradients,
 
 @njit(parallel=True)
 def _parallel_find_split_subtraction(splitter, parent_histograms,
-                                     sibling_histograms, gradient, hessian):
+                                     sibling_histograms,
+                                     sum_gradients, sum_hessians):
     """For each feature, find the best bin to split by histogram substraction
 
     This in turn calls _find_histogram_split_subtraction that does not need
@@ -196,7 +197,7 @@ def _parallel_find_split_subtraction(splitter, parent_histograms,
     for feature_idx in prange(splitter.n_features):
         split_info = _find_histogram_split_subtraction(
             splitter, feature_idx, parent_histograms, sibling_histograms,
-            gradient, hessian)
+            sum_gradients, sum_hessians)
         split_infos[feature_idx] = split_info
 
     return _find_best_feature_to_split_helper(
@@ -206,7 +207,7 @@ def _parallel_find_split_subtraction(splitter, parent_histograms,
 @njit(fastmath=True)
 def _find_histogram_split(splitter, feature_idx, sample_indices,
                           ordered_gradients, ordered_hessians,
-                          gradient, hessian):
+                          sum_gradients, sum_hessians):
     """Compute the histogram for a given feature and return the best bin."""
     binned_feature = splitter.binned_features.T[feature_idx]
     root_node = binned_feature.shape[0] == sample_indices.shape[0]
@@ -230,13 +231,13 @@ def _find_histogram_split(splitter, feature_idx, sample_indices,
                 ordered_gradients, ordered_hessians)
 
     return _find_best_bin_to_split_helper(
-        splitter, feature_idx, histogram, gradient, hessian)
+        splitter, feature_idx, histogram, sum_gradients, sum_hessians)
 
 
 @njit(fastmath=True)
 def _find_histogram_split_subtraction(splitter, feature_idx,
                                       parent_histograms, sibling_histograms,
-                                      gradient, hessian):
+                                      sum_gradients, sum_hessians):
     """Compute the histogram by substraction of parent and sibling
 
     Uses the identity: hist(parent) = hist(left) + hist(right)
@@ -246,13 +247,13 @@ def _find_histogram_split_subtraction(splitter, feature_idx,
         sibling_histograms[feature_idx])
 
     return _find_best_bin_to_split_helper(
-        splitter, feature_idx, histogram, gradient, hessian)
+        splitter, feature_idx, histogram, sum_gradients, sum_hessians)
 
 
 @njit(locals={'gradient_left': float32, 'hessian_left': float32},
       fastmath=True)
 def _find_best_bin_to_split_helper(splitter, feature_idx, histogram,
-                                   gradient, hessian):
+                                   sum_gradients, sum_hessians):
     """Find best bin to split on and return the corresponding SplitInfo"""
     # Allocate the structure for the best split information. It can be
     # returned as such (with a negative gain) if the min_hessian_to_split
@@ -270,13 +271,13 @@ def _find_best_bin_to_split_helper(splitter, feature_idx, histogram,
             hessian_left += histogram[bin_idx]['sum_hessians']
         if hessian_left < splitter.min_hessian_to_split:
             continue
-        hessian_right = hessian - hessian_left
+        hessian_right = sum_hessians - hessian_left
         if hessian_right < splitter.min_hessian_to_split:
             continue
-        gradient_right = gradient - gradient_left
+        gradient_right = sum_gradients - gradient_left
         gain = _split_gain(gradient_left, hessian_left,
                            gradient_right, hessian_right,
-                           gradient, hessian,
+                           sum_gradients, sum_hessians,
                            splitter.l2_regularization)
         if gain > best_split.gain:
             best_split.gain = gain
@@ -293,7 +294,7 @@ def _find_best_bin_to_split_helper(splitter, feature_idx, histogram,
 
 @njit(fastmath=False)
 def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
-                gradient, hessian, l2_regularization):
+                sum_gradients, sum_hessians, l2_regularization):
     """Loss reduction
 
     Compute the reduction in loss after taking a split compared to keeping
@@ -308,5 +309,5 @@ def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
 
     gain = negative_loss(gradient_left, hessian_left)
     gain += negative_loss(gradient_right, hessian_right)
-    gain -= negative_loss(gradient, hessian)
+    gain -= negative_loss(sum_gradients, sum_hessians)
     return gain
