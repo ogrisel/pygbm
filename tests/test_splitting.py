@@ -8,27 +8,35 @@ from pygbm.splitting import HistogramSplitter
 
 
 @pytest.mark.parametrize('n_bins', [3, 32, 256])
-def test_hitstogram_split(n_bins):
+def test_histogram_split(n_bins):
     rng = np.random.RandomState(42)
-    feature_idx = 12
+    feature_idx = 0
     l2_regularization = 0
     min_hessian_to_split = 1e-3
-    binned_feature = rng.randint(0, n_bins, size=int(1e4)).astype(np.uint8)
+    binned_features = np.asfortranarray(
+        rng.randint(0, n_bins, size=(int(1e4), 2)), dtype=np.uint8)
+    binned_feature = binned_features.T[feature_idx]
     sample_indices = np.arange(binned_feature.shape[0], dtype=np.uint32)
     ordered_hessians = np.ones_like(binned_feature, dtype=np.float32)
+    all_hessians = ordered_hessians
 
     for true_bin in range(1, n_bins - 1):
         for sign in [-1, 1]:
             ordered_gradients = np.full_like(binned_feature, sign,
                                              dtype=np.float32)
             ordered_gradients[binned_feature <= true_bin] *= -1
+            all_gradients = ordered_gradients
+
+            splitter = HistogramSplitter(binned_features.shape[1],
+                                         binned_features, n_bins,
+                                         all_gradients, all_hessians,
+                                         l2_regularization,
+                                         min_hessian_to_split)
 
             split_info = _find_histogram_split(
-                feature_idx, binned_feature, n_bins, sample_indices,
-                ordered_gradients, ordered_hessians, l2_regularization,
-                min_hessian_to_split, True, ordered_hessians[0],
-                ordered_gradients.sum(),
-                ordered_hessians[0] * sample_indices.shape[0])
+                splitter, feature_idx, sample_indices,
+                ordered_gradients, ordered_hessians,
+                ordered_gradients.sum(), ordered_hessians.sum())
 
             assert split_info.bin_idx == true_bin
             assert split_info.gain >= 0
