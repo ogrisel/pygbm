@@ -4,3 +4,4 @@ scipy
 scikit-learn
 pytest  # for the tests
 joblib  # for the benchmark scripts
+lightgbm

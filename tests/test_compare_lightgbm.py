@@ -1,0 +1,50 @@
+try:
+    import lightgbm as lb
+except ImportError:
+    exit(0)
+from sklearn.metrics import mean_squared_error
+import numpy as np
+import pytest
+
+from pygbm import GradientBoostingMachine
+from pygbm.binning import BinMapper
+
+
+@pytest.mark.parametrize('seed', [1, 2, 3, 4, 5])
+@pytest.mark.parametrize('n_samples', [255, 1000])
+def test_same_predictions_easy_target(seed, n_samples):
+    # Make sure pygbm has the same predictions as LGBM for very easy targets.
+    #
+    # Notes:
+    # - As some splits maye have equal gains (and because of float errors) when
+    #   the number of samples in a node is low, it makes more sense to compare
+    #   the predictions rather than the trees which may be split in different
+    #   features just out of luck.
+    # - To avoid discrepancies in the binning strategy, data is pre-binnes if
+    #   n_samples > 255.
+    rng = np.random.RandomState(seed=seed)
+
+    n_samples = n_samples
+    min_sample_leaf = 1
+    max_iter = 1
+
+    # data = linear target, 5 features, 3 irrelevant.
+    X = rng.normal(size=(n_samples, 5))
+    y = X[:, 0] - X[:, 1]
+    if n_samples > 255:
+        X = BinMapper().fit_transform(X)
+
+    est_lightgbm = lb.LGBMRegressor(n_estimators=max_iter,
+                                    min_data=1, min_data_in_bin=1,
+                                    learning_rate=1,
+                                    min_child_samples=min_sample_leaf)
+    est_pygbm = GradientBoostingMachine(max_iter=max_iter,
+                                        validation_split=None, scoring=None,
+                                        min_samples_leaf=min_sample_leaf)
+    est_lightgbm.fit(X, y)
+    est_pygbm.fit(X, y)
+
+    pred_lgbm = est_lightgbm.predict(X)
+    pred_pygbm = est_pygbm.predict(X)
+
+    np.testing.assert_array_almost_equal(pred_lgbm, pred_pygbm, decimal=5)
