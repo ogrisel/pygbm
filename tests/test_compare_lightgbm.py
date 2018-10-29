@@ -6,8 +6,8 @@ from pygbm import GradientBoostingMachine
 from pygbm.binning import BinMapper
 
 
-@pytest.mark.parametrize('seed', [1, 2, 3, 4, 5])
-@pytest.mark.parametrize('n_samples', [255, 1000])
+@pytest.mark.parametrize('seed', [1, 3, 4, 5])
+@pytest.mark.parametrize('n_samples', [255, 3000])
 def test_same_predictions_easy_target(seed, n_samples):
     # Make sure pygbm has the same predictions as LGBM for very easy targets.
     #
@@ -24,6 +24,7 @@ def test_same_predictions_easy_target(seed, n_samples):
     rng = np.random.RandomState(seed=seed)
     n_samples = n_samples
     min_sample_leaf = 1
+    max_leaf_nodes = 6
     max_iter = 1
 
     # data = linear target, 5 features, 3 irrelevant.
@@ -37,20 +38,16 @@ def test_same_predictions_easy_target(seed, n_samples):
     est_lightgbm = lb.LGBMRegressor(n_estimators=max_iter,
                                     min_data=1, min_data_in_bin=1,
                                     learning_rate=1,
-                                    min_child_samples=min_sample_leaf)
+                                    min_child_samples=min_sample_leaf,
+                                    num_leaves=max_leaf_nodes)
     est_pygbm = GradientBoostingMachine(max_iter=max_iter,
                                         validation_split=None, scoring=None,
-                                        min_samples_leaf=min_sample_leaf)
+                                        min_samples_leaf=min_sample_leaf,
+                                        max_leaf_nodes=max_leaf_nodes)
     est_lightgbm.fit(X_train, y_train)
     est_pygbm.fit(X_train, y_train)
 
-    pred_lgbm = est_lightgbm.predict(X_train)
-    pred_pygbm = est_pygbm.predict(X_train)
-    np.testing.assert_array_almost_equal(pred_lgbm, pred_pygbm, decimal=5)
-
-    # for test data, make sure that more than 80% of the preditions are equal
-    # up to the 5th decimal.
-    pred_lgbm = est_lightgbm.predict(X_test)
-    pred_pygbm = est_pygbm.predict(X_test)
-    different = np.abs(pred_lgbm - pred_pygbm) > 1e-5
-    assert different.mean() < .2
+    for data in (X_test, X_train):
+        pred_lgbm = est_lightgbm.predict(data)
+        pred_pygbm = est_pygbm.predict(data)
+        np.testing.assert_array_almost_equal(pred_lgbm, pred_pygbm, decimal=5)
