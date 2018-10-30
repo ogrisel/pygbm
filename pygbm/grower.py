@@ -2,6 +2,7 @@ import warnings
 from heapq import heappush, heappop
 import numpy as np
 from time import time
+from numba import jit, prange
 
 from .splitting import HistogramSplitter
 from .predictor import TreePredictor, PREDICTOR_RECORD_DTYPE
@@ -276,3 +277,12 @@ class TreeGrower:
             return self._fill_predictor_node_array(
                 predictor_nodes, grower_node.right_child,
                 bin_thresholds=bin_thresholds, next_free_idx=next_free_idx)
+
+
+@jit(parallel=True)
+def update_y_pred(leaves, y_pred):
+
+    for leaf_i in prange(len(leaves)):
+        leaf = leaves[leaf_i]
+        for sample_idx in leaf.sample_indices:
+            y_pred[sample_idx] += leaf.value

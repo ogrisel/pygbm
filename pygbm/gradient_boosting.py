@@ -6,7 +6,7 @@ from sklearn.metrics import check_scoring
 from sklearn.model_selection import train_test_split
 
 from pygbm.binning import BinMapper
-from pygbm.grower import TreeGrower
+from pygbm.grower import TreeGrower, update_y_pred
 
 
 class GradientBoostingMachine(BaseEstimator, RegressorMixin):
@@ -40,7 +40,7 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
         # TODO: add support for mixed-typed (numerical + categorical) data
         # TODO: add support for missing data
         # TODO: add support for pre-binned data (pass-through)?
-        X, y = check_X_y(X, y, dtype=[np.float32, np.float64])
+        X, y = check_X_y(X, y, dtype=[np.float32, np.float32])
         rng = check_random_state(self.random_state)
         if self.verbose:
             print(f"Binning {X.nbytes / 1e9:.3f} GB of data: ", end="",
@@ -77,6 +77,7 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
         if self.verbose:
             print("Fitting gradient boosted rounds:")
         # TODO: plug custom loss functions
+        y_pred = np.zeros_like(y_train, dtype=np.float32)
         gradients = np.asarray(y_train, dtype=np.float32).copy()
         hessians = np.ones(1, dtype=np.float32)
         self.predictors_ = predictors = []
@@ -106,7 +107,8 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
             predictors.append(predictor)
             self.n_iter_ += 1
             tic_pred = time()
-            gradients -= predictor.predict_binned(X_binned_train)
+            update_y_pred(grower.finalized_leaves, y_pred)
+            gradients = (y_train - y_pred).astype(np.float32)
             toc_pred = time()
             acc_prediction_time += toc_pred - tic_pred
 
