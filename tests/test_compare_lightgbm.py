@@ -6,25 +6,33 @@ from pygbm import GradientBoostingMachine
 from pygbm.binning import BinMapper
 
 
-@pytest.mark.parametrize('seed', [1, 3, 4, 5])
-@pytest.mark.parametrize('n_samples', [255, 3000])
-def test_same_predictions_easy_target(seed, n_samples):
+@pytest.mark.parametrize('seed', range(5))
+@pytest.mark.parametrize('n_samples, max_leaf_nodes', [
+    (255, 4096),
+    (1000, 8),
+])
+def test_same_predictions_easy_target(seed, n_samples, max_leaf_nodes):
     # Make sure pygbm has the same predictions as LGBM for very easy targets.
     #
+    # In particular when the size of the trees are bound and the number of
+    # samples is large enough, the structure of the prediction trees found by
+    # LightGBM and PyGBM should be exactly identical.
+    #
     # Notes:
-    # - As some splits maye have equal gains (and because of float errors) when
-    #   the number of samples in a node is low, it makes more sense to compare
-    #   the predictions rather than the trees which may be split in different
-    #   features just out of luck.
-    # - To avoid discrepancies in the binning strategy, data is pre-binned if
-    #   n_samples > 255.
+    # - Several candidate splits may have equal gains when the number of
+    #   samples in a node is low (and because of float errors). Therefore the
+    #   predictions on the test set might differ if the structure of the tree
+    #   is not exactly the same. To avoid this issue we only compare the
+    #   predictions on the test set when the number of samples is large enough
+    #   and max_leaf_nodes is low enough.
+    # - To ignore  discrepancies caused by small differences the binning
+    #   strategy, data is pre-binned if n_samples > 255.
 
     lb = pytest.importorskip("lightgbm")
 
     rng = np.random.RandomState(seed=seed)
     n_samples = n_samples
     min_sample_leaf = 1
-    max_leaf_nodes = 6
     max_iter = 1
 
     # data = linear target, 5 features, 3 irrelevant.
@@ -47,7 +55,11 @@ def test_same_predictions_easy_target(seed, n_samples):
     est_lightgbm.fit(X_train, y_train)
     est_pygbm.fit(X_train, y_train)
 
-    for data in (X_test, X_train):
-        pred_lgbm = est_lightgbm.predict(data)
-        pred_pygbm = est_pygbm.predict(data)
+    pred_lgbm = est_lightgbm.predict(X_train)
+    pred_pygbm = est_pygbm.predict(X_train)
+    np.testing.assert_array_almost_equal(pred_lgbm, pred_pygbm, decimal=5)
+
+    if max_leaf_nodes < 10 and n_samples > 1000:
+        pred_lgbm = est_lightgbm.predict(X_test)
+        pred_pygbm = est_pygbm.predict(X_test)
         np.testing.assert_array_almost_equal(pred_lgbm, pred_pygbm, decimal=5)
