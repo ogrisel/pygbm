@@ -4,7 +4,8 @@ from numpy.testing import assert_array_almost_equal
 import pytest
 
 from pygbm.splitting import _find_histogram_split
-from pygbm.splitting import HistogramSplitter
+from pygbm.splitting import (SplittingContext, find_node_split,
+                             find_node_split_subtraction)
 
 
 @pytest.mark.parametrize('n_bins', [3, 32, 256])
@@ -27,16 +28,16 @@ def test_histogram_split(n_bins):
             ordered_gradients[binned_feature <= true_bin] *= -1
             all_gradients = ordered_gradients
 
-            splitter = HistogramSplitter(binned_features.shape[1],
-                                         binned_features, n_bins,
-                                         all_gradients, all_hessians,
-                                         l2_regularization,
-                                         min_hessian_to_split)
+            context = SplittingContext(binned_features.shape[1],
+                                       binned_features, n_bins,
+                                       all_gradients, all_hessians,
+                                       l2_regularization,
+                                       min_hessian_to_split)
 
             split_info = _find_histogram_split(
-                splitter, feature_idx, sample_indices,
-                ordered_gradients, ordered_hessians,
-                ordered_gradients.sum(), ordered_hessians.sum())
+                context, feature_idx, sample_indices, ordered_gradients,
+                ordered_hessians, ordered_gradients.sum(),
+                ordered_hessians.sum())
 
             assert split_info.bin_idx == true_bin
             assert split_info.gain >= 0
@@ -67,25 +68,25 @@ def test_split_vs_split_subtraction(constant_hessian):
     else:
         all_hessians = rng.lognormal(size=n_samples).astype(np.float32)
 
-    splitter = HistogramSplitter(n_features, binned_features, n_bins,
-                                 all_gradients, all_hessians,
-                                 l2_regularization, min_hessian_to_split)
+    context = SplittingContext(n_features, binned_features, n_bins,
+                               all_gradients, all_hessians,
+                               l2_regularization, min_hessian_to_split)
 
     mask = rng.randint(0, 2, n_samples).astype(np.bool)
     sample_indices_left = sample_indices[mask]
     sample_indices_right = sample_indices[~mask]
 
     # first split parent, left and right with classical method
-    si_parent, hists_parent = splitter.find_node_split(sample_indices)
-    si_left, hists_left = splitter.find_node_split(sample_indices_left)
-    si_right, hists_right = splitter.find_node_split(sample_indices_right)
+    si_parent, hists_parent = find_node_split(context, sample_indices)
+    si_left, hists_left = find_node_split(context, sample_indices_left)
+    si_right, hists_right = find_node_split(context, sample_indices_right)
 
     # split left with subtraction method
-    si_left_sub, hists_left_sub = splitter.find_node_split_subtraction(
+    si_left_sub, hists_left_sub = find_node_split_subtraction(context,
         sample_indices_left, hists_parent, hists_right)
 
     # split right with subtraction method
-    si_right_sub, hists_right_sub = splitter.find_node_split_subtraction(
+    si_right_sub, hists_right_sub = find_node_split_subtraction(context,
         sample_indices_right, hists_parent, hists_left)
 
     # make sure histograms from classical and subtraction method are the same
@@ -141,25 +142,25 @@ def test_gradient_and_hessian_sanity(constant_hessian):
     else:
         all_hessians = rng.lognormal(size=n_samples).astype(np.float32)
 
-    splitter = HistogramSplitter(n_features, binned_features, n_bins,
-                                 all_gradients, all_hessians,
-                                 l2_regularization, min_hessian_to_split)
+    context = SplittingContext(n_features, binned_features, n_bins,
+                               all_gradients, all_hessians,
+                               l2_regularization, min_hessian_to_split)
 
     mask = rng.randint(0, 2, n_samples).astype(np.bool)
     sample_indices_left = sample_indices[mask]
     sample_indices_right = sample_indices[~mask]
 
     # first split parent, left and right with classical method
-    si_parent, hists_parent = splitter.find_node_split(sample_indices)
-    si_left, hists_left = splitter.find_node_split(sample_indices_left)
-    si_right, hists_right = splitter.find_node_split(sample_indices_right)
+    si_parent, hists_parent = find_node_split(context, sample_indices)
+    si_left, hists_left = find_node_split(context, sample_indices_left)
+    si_right, hists_right = find_node_split(context, sample_indices_right)
 
     # split left with subtraction method
-    si_left_sub, hists_left_sub = splitter.find_node_split_subtraction(
+    si_left_sub, hists_left_sub = find_node_split_subtraction(context,
         sample_indices_left, hists_parent, hists_right)
 
     # split right with subtraction method
-    si_right_sub, hists_right_sub = splitter.find_node_split_subtraction(
+    si_right_sub, hists_right_sub = find_node_split_subtraction(context,
         sample_indices_right, hists_parent, hists_left)
 
     # make sure that si.gradient_left + si.gradient_right have their expected

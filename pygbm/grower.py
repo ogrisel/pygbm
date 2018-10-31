@@ -3,7 +3,8 @@ from heapq import heappush, heappop
 import numpy as np
 from time import time
 
-from .splitting import HistogramSplitter
+from .splitting import (SplittingContext, split_indices, find_node_split,
+                        find_node_split_subtraction)
 from .predictor import TreePredictor, PREDICTOR_RECORD_DTYPE
 
 
@@ -16,7 +17,7 @@ class TreeNode:
     sibling = None  # Link to sibling node, None for root
     parent = None  # Link to parent node, None for root
     find_split_time = 0.  # time spent finding the best split
-    construction_speed = 0.  # number of samples / find_split_time 
+    construction_speed = 0.  # number of samples / find_split_time
     apply_split_time = 0.  # time spent splitting the node
     # wheter the subtraction method was used for histogram computation
     hist_subtraction = False
@@ -68,7 +69,7 @@ class TreeGrower:
         if not features_data.flags.f_contiguous:
             warnings.warn("Binned data should be passed as Fortran contiguous"
                           "array for maximum efficiency.")
-        self.splitter = HistogramSplitter(
+        self.splitting_context = SplittingContext(
             features_data.shape[1], features_data, n_bins,
             all_gradients, all_hessians, l2_regularization,
             min_hessian_to_split)
@@ -95,12 +96,12 @@ class TreeGrower:
     def _intilialize_root(self):
         n_samples = self.features_data.shape[0]
         depth = 0
-        if self.splitter.constant_hessian:
-            hessian = self.splitter.all_hessians[0] * n_samples
+        if self.splitting_context.constant_hessian:
+            hessian = self.splitting_context.all_hessians[0] * n_samples
         else:
-            hessian = self.splitter.all_hessians.sum()
+            hessian = self.splitting_context.all_hessians.sum()
         self.root = TreeNode(depth, np.arange(n_samples, dtype=np.uint32),
-                             self.splitter.all_gradients.sum(),
+                             self.splitting_context.all_gradients.sum(),
                              hessian)
         if (self.max_leaf_nodes is not None and self.max_leaf_nodes == 1):
             self._finalize_leaf(self.root)
@@ -133,14 +134,12 @@ class TreeGrower:
 
             tic = time()
             if node.hist_subtraction:
-                split_info, histograms = (
-                    self.splitter.find_node_split_subtraction(
-                        node.sample_indices, node.parent.histograms,
-                        node.sibling.histograms)
-                )
+                split_info, histograms = find_node_split_subtraction(
+                    self.splitting_context, node.sample_indices,
+                    node.parent.histograms, node.sibling.histograms)
             else:
-                split_info, histograms = self.splitter.find_node_split(
-                    node.sample_indices)
+                split_info, histograms = find_node_split(
+                    self.splitting_context, node.sample_indices)
             toc = time()
             node.find_split_time = toc - tic
             self.total_find_split_time += node.find_split_time
@@ -171,8 +170,8 @@ class TreeGrower:
         node = heappop(self.splittable_nodes)
 
         tic = time()
-        sample_indices_left, sample_indices_right = \
-            self.splitter.split_indices(node.sample_indices, node.split_info)
+        sample_indices_left, sample_indices_right = split_indices(
+            self.splitting_context, node.sample_indices, node.split_info)
         toc = time()
         node.apply_split_time = toc - tic
         self.total_apply_split_time += node.apply_split_time
@@ -227,7 +226,7 @@ class TreeGrower:
         https://arxiv.org/abs/1603.02754
         """
         node.value = self.shrinkage * node.sum_gradients / (
-            node.sum_hessians + self.splitter.l2_regularization)
+            node.sum_hessians + self.splitting_context.l2_regularization)
         self.finalized_leaves.append(node)
 
     def _finalize_splittable_nodes(self):
