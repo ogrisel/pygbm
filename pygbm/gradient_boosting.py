@@ -1,4 +1,5 @@
 import numpy as np
+from numba import njit, prange
 from time import time
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.utils import check_X_y, check_random_state
@@ -6,7 +7,7 @@ from sklearn.metrics import check_scoring
 from sklearn.model_selection import train_test_split
 
 from pygbm.binning import BinMapper
-from pygbm.grower import TreeGrower, update_y_pred
+from pygbm.grower import TreeGrower
 
 
 class GradientBoostingMachine(BaseEstimator, RegressorMixin):
@@ -40,7 +41,8 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
         # TODO: add support for mixed-typed (numerical + categorical) data
         # TODO: add support for missing data
         # TODO: add support for pre-binned data (pass-through)?
-        X, y = check_X_y(X, y, dtype=[np.float32, np.float32])
+        X, y = check_X_y(X, y, dtype=[np.float32, np.float64])
+        y = y.astype(np.float32, copy=False)
         rng = check_random_state(self.random_state)
         if self.verbose:
             print(f"Binning {X.nbytes / 1e9:.3f} GB of data: ", end="",
@@ -107,8 +109,10 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
             predictors.append(predictor)
             self.n_iter_ += 1
             tic_pred = time()
-            update_y_pred(grower.finalized_leaves, y_pred)
-            gradients = (y_train - y_pred).astype(np.float32)
+            leaves_data = [(l.value, l.sample_indices)
+                           for l in grower.finalized_leaves]
+            _update_y_pred(leaves_data, y_pred)
+            gradients = y_train - y_pred
             toc_pred = time()
             acc_prediction_time += toc_pred - tic_pred
 
@@ -194,3 +198,12 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
 
 # TODO: shall we split between GBMClassifier and GBMRegressor instead
 # of using a single class?
+
+
+@njit(parallel=True)
+def _update_y_pred(leaves_data, y_pred):
+    """Read prediction data on the training set from the grower leaves"""
+    for leaf_idx in prange(len(leaves_data)):
+        leaf_value, sample_indices = leaves_data[leaf_idx]
+        for sample_idx in sample_indices:
+            y_pred[sample_idx] += leaf_value
