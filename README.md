@@ -8,7 +8,7 @@ Gradient Boosting Trees (possibly with all the LightGBM optimizations)
 while staying in pure Python using the [numba](http://numba.pydata.org/)
 jit compiler.
 
-We plan scikit-learn compatible set of estimators class and possibly
+We plan scikit-learn compatible set of estimator classes and possibly
 integration with dask and dask-ml for out-of-core and distributed
 fitting on a cluster.
 
