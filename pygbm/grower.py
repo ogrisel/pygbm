@@ -22,10 +22,11 @@ class TreeNode:
     # wheter the subtraction method was used for histogram computation
     hist_subtraction = False
 
-    def __init__(self, depth, sample_indices, sum_gradients, sum_hessians,
-                 parent=None):
+    def __init__(self, depth, sample_indices, sum_gradients,
+                 sum_hessians, parent=None):
         self.depth = depth
         self.sample_indices = sample_indices
+        self.n_samples = sample_indices.shape[0]
         self.sum_gradients = sum_gradients
         self.sum_hessians = sum_hessians
         self.parent = parent
@@ -100,9 +101,12 @@ class TreeGrower:
             hessian = self.splitting_context.all_hessians[0] * n_samples
         else:
             hessian = self.splitting_context.all_hessians.sum()
-        self.root = TreeNode(depth, np.arange(n_samples, dtype=np.uint32),
-                             self.splitting_context.all_gradients.sum(),
-                             hessian)
+        self.root = TreeNode(
+            depth=depth,
+            sample_indices=self.splitting_context.partition.view(),
+            sum_gradients=self.splitting_context.all_gradients.sum(),
+            sum_hessians=hessian
+        )
         if (self.max_leaf_nodes is not None and self.max_leaf_nodes == 1):
             self._finalize_leaf(self.root)
             return
@@ -124,9 +128,7 @@ class TreeGrower:
             # the regular method) and use the subtraction method for the
             # current node
             if node.sibling is not None:  # root has no sibling
-                n_samples_sibling = node.sibling.sample_indices.shape[0]
-                n_samples_node = node.sample_indices.shape[0]
-                if n_samples_sibling < n_samples_node:
+                if node.sibling.n_samples < node.n_samples:
                     self._compute_spittability(node.sibling, only_hist=True)
                     # As hist of sibling is now computed we'll use the hist
                     # subtraction method for the current node.
@@ -143,8 +145,7 @@ class TreeGrower:
             toc = time()
             node.find_split_time = toc - tic
             self.total_find_split_time += node.find_split_time
-            node.construction_speed = (node.sample_indices.shape[0] /
-                                       node.find_split_time)
+            node.construction_speed = node.n_samples / node.find_split_time
             node.split_info = split_info
             node.histograms = histograms
 
@@ -170,8 +171,8 @@ class TreeGrower:
         node = heappop(self.splittable_nodes)
 
         tic = time()
-        sample_indices_left, sample_indices_right = split_indices(
-            self.splitting_context, node.sample_indices, node.split_info)
+        (sample_indices_left, sample_indices_right) = split_indices(
+            self.splitting_context, node.split_info, node.sample_indices)
         toc = time()
         node.apply_split_time = toc - tic
         self.total_apply_split_time += node.apply_split_time
@@ -180,12 +181,16 @@ class TreeGrower:
         n_leaf_nodes = len(self.finalized_leaves) + len(self.splittable_nodes)
         n_leaf_nodes += 2
 
-        left_child_node = TreeNode(depth, sample_indices_left,
+        left_child_node = TreeNode(depth,
+                                   sample_indices_left,
                                    node.split_info.gradient_left,
-                                   node.split_info.hessian_left, parent=node)
-        right_child_node = TreeNode(depth, sample_indices_right,
+                                   node.split_info.hessian_left,
+                                   parent=node)
+        right_child_node = TreeNode(depth,
+                                    sample_indices_right,
                                     node.split_info.gradient_right,
-                                    node.split_info.hessian_right, parent=node)
+                                    node.split_info.hessian_right,
+                                    parent=node)
         left_child_node.sibling = right_child_node
         right_child_node.sibling = left_child_node
         node.right_child = right_child_node
@@ -243,7 +248,7 @@ class TreeGrower:
     def _fill_predictor_node_array(self, predictor_nodes, grower_node,
                                    bin_thresholds=None, next_free_idx=0):
         node = predictor_nodes[next_free_idx]
-        node['count'] = grower_node.sample_indices.shape[0]
+        node['count'] = grower_node.n_samples
         node['depth'] = grower_node.depth
         if grower_node.split_info is not None:
             node['gain'] = grower_node.split_info.gain

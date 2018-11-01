@@ -43,6 +43,9 @@ class SplitInfo:
     ('constant_hessian_value', float32),
     ('l2_regularization', float32),
     ('min_hessian_to_split', float32),
+    ('partition', uint32[::1]),
+    ('left_indices_buffer', uint32[::1]),
+    ('right_indices_buffer', uint32[::1]),
 ])
 class SplittingContext:
     def __init__(self, n_features, binned_features, n_bins,
@@ -61,39 +64,68 @@ class SplittingContext:
         else:
             self.constant_hessian_value = float32(1.)  # won't be used anyway
 
+        # The partition array maps each sample index into the leaves of the
+        # tree (a leaf in this context is a node that isn't splitted yet, not
+        # necessarily a 'finalized' leaf). Initially, the root contains all
+        # the indices, e.g.:
+        # partition = [abcdefghijkl]
+        # After a call to split_indices, it may look e.g. like this:
+        # partition = [cef|abdghijkl]
+        # we have 2 leaves, the left one is at position 0 and the second one at
+        # position 3. The order of the samples is irrelevant.
+        self.partition = np.arange(0, binned_features.shape[0], 1, np.uint32)
+        # buffers used in split_indices to support parallel splitting.
+        self.left_indices_buffer = np.empty_like(self.partition)
+        self.right_indices_buffer = np.empty_like(self.partition)
+
 
 @njit(parallel=True,
       locals={'sample_idx': uint32,
               'left_count': uint32,
               'right_count': uint32})
-def split_indices(context, sample_indices, split_info):
+def split_indices(context, split_info, sample_indices):
     """Split samples into left and right arrays.
 
     This is a multi-threaded implementation inspired by lightgbm.
-    Quick break-down:
-    - samples indices is devided into n_threads regions. Each thread will
-      be responsible for its own region. Here is an example with 4
-      threads and 24 samples:
-      samples_indices = [abcdef|ghijkl|mnopqr|stuvwx]
-    - Each thread processes 6 = 24 // 4 entries and maps them
-      into tmp_left or tmp_right. For example,
-      we could have the following mapping:
-      - tmp_left =  [abef..|il....|mnopqr|tux...]
-      - tmp_right = [cd....|ghjk..|......|svw...]
-    - We keep track of the start positions of the regions (the '|') as
-      well as the size of each region. We also keep track of the number
-      of samples put into the left/right node by each thread. Concretely:
-      - left_cnt =  [4, 2, 6, 3]
-      - right_cnt = [2, 4, 0, 3]
-    - Finally, we put tmp_left and tmp_right into the returned arrays
-      sample_indices_left and sample_indices_right. This is done with the
-      help of left_write_offset and right_write_offset, whose entries are
-      here denoted by '^':
-      - sample_indices_left =   [abefilmnopqrtux.........]
-                                 ^   ^ ^     ^
-      - samples_indices_right = [cdghjksvw...............]
-                                 ^ ^   ^
-                                       ^
+    Here is a quick break down. Let's suppose we want to split a node with
+    24 samples named from a to x. context.partition looks like this (the * are
+    indices in other leaves that we don't care about):
+    partition = [*************abcdefghijklmnopqrstuvwx****************]
+                              ^                       ^
+                        node_position     node_position + node.n_samples
+
+    Ultimately, we want to reorder the samples inside the boundaries of the
+    leaf (which becomes a node) to now represent the samples in its left and
+    right child. For example:
+    partition = [*************abefilmnopqrtuxcdghjksvw*****************]
+                              ^              ^
+                      left_child_pos     right_child_pos
+    Note that left_child_pos always takes the value of node_position, and
+    right_child_pos = left_child_pos + left_child.n_samples. The order of the
+    samples inside a leaf is irrelevant.
+
+    1. samples_indices is a view on this region a..x. We conceptually
+       divide it into n_threads regions. Each thread will be responsible for
+       its own region. Here is an example with 4 threads:
+       samples_indices = [abcdef|ghijkl|mnopqr|stuvwx]
+    2. Each thread processes 6 = 24 // 4 entries and maps them into
+       left_indices_buffer or right_indices_buffer. For example, we could
+       have the following mapping ('.' denotes an undefined entry):
+       - left_indices_buffer =  [abef..|il....|mnopqr|tux...]
+       - right_indices_buffer = [cd....|ghjk..|......|svw...]
+    3. We keep track of the start positions of the regions (the '|') in
+       `offset_in_buffers` as well as the size of each region. We also keep
+       track of the number of samples put into the left/right child by each
+       thread. Concretely:
+       - left_counts =  [4, 2, 6, 3]
+       - right_counts = [2, 4, 0, 3]
+    4. Finally, we put left/right_indices_buffer back into the samples_indices,
+       without any undefined entries and the partition looks as expected
+       partition = [*************abefilmnopqrtuxcdghjksvw*****************]
+
+    Note: We here show left/right_indices_buffer as being the same size as
+    sample_indices for simplicity, but in reality they are of the same size as
+    partition.
     """
 
     binned_feature = context.binned_features.T[split_info.feature_idx]
@@ -101,61 +133,63 @@ def split_indices(context, sample_indices, split_info):
     n_threads = numba.config.NUMBA_DEFAULT_NUM_THREADS
     n_samples = sample_indices.shape[0]
 
-    sample_indices_left = np.empty_like(sample_indices)
-    sample_indices_right = np.empty_like(sample_indices)
-
-    tmp_left = np.empty_like(sample_indices)
-    tmp_right = np.empty_like(sample_indices)
-
+    # Note: we could probably allocate all the arrays of size n_threads in the
+    # splitting context as well, but gains are probably going to be minimal
     sizes = np.full(n_threads, n_samples // n_threads, dtype=np.int32)
     sizes[:n_samples % n_threads] += 1
-    starts = np.zeros(n_threads, dtype=np.int32)
-    starts[1:] = np.cumsum(sizes[:-1])
+    offset_in_buffers = np.zeros(n_threads, dtype=np.int32)
+    offset_in_buffers[1:] = np.cumsum(sizes[:-1])
 
     left_counts = np.empty(n_threads, dtype=np.int32)
     right_counts = np.empty(n_threads, dtype=np.int32)
 
-    # map indices to tmp_left and tmp_right
+    # Need to declare local variables, else they're not updated :/
+    # (see numba issue 3459)
+    left_indices_buffer = context.left_indices_buffer
+    right_indices_buffer = context.right_indices_buffer
+
+    # map indices from samples_indices to left/right_indices_buffer
     for thread_idx in prange(n_threads):
         left_count = 0
         right_count = 0
 
-        start = starts[thread_idx]
+        start = offset_in_buffers[thread_idx]
         stop = start + sizes[thread_idx]
         for i in range(start, stop):
             sample_idx = sample_indices[i]
             if binned_feature[sample_idx] <= split_info.bin_idx:
-                tmp_left[start + left_count] = sample_idx
+                left_indices_buffer[start + left_count] = sample_idx
                 left_count += 1
             else:
-                tmp_right[start + right_count] = sample_idx
+                right_indices_buffer[start + right_count] = sample_idx
                 right_count += 1
 
         left_counts[thread_idx] = left_count
         right_counts[thread_idx] = right_count
 
-    left_write_offset = np.zeros(n_threads, dtype=np.int32)
-    right_write_offset = np.zeros(n_threads, dtype=np.int32)
-    left_write_offset[1:] = np.cumsum(left_counts[:-1])
-    right_write_offset[1:] = np.cumsum(right_counts[:-1])
+    # position of right child = just after the left child
+    right_child_position = left_counts.sum()
 
-    # put tmp_left and tmp_right into samples_indices_left/right
+    # offset of each thread in samples_indices for left and right child, i.e.
+    # where each thread will start to write.
+    left_offset = np.zeros(n_threads, dtype=np.int32)
+    left_offset[1:] = np.cumsum(left_counts[:-1])
+    right_offset = np.full(n_threads, right_child_position, dtype=np.int32)
+    right_offset[1:] += np.cumsum(right_counts[:-1])
+
+    # map indices in left/right_indices_buffer back into samples_indices. This
+    # also updates context.partition since samples_indice is a view.
     for thread_idx in prange(n_threads):
 
-        start = starts[thread_idx]
-        stop = starts[thread_idx] + left_counts[thread_idx]
-        for i, j in enumerate(range(start, stop)):
-            sample_indices_left[left_write_offset[thread_idx] + i] = \
-                tmp_left[j]
+        for i in range(left_counts[thread_idx]):
+            sample_indices[left_offset[thread_idx] + i] = \
+                left_indices_buffer[offset_in_buffers[thread_idx] + i]
+        for i in range(right_counts[thread_idx]):
+            sample_indices[right_offset[thread_idx] + i] = \
+                right_indices_buffer[offset_in_buffers[thread_idx] + i]
 
-        start = starts[thread_idx]
-        stop = starts[thread_idx] + right_counts[thread_idx]
-        for i, j in enumerate(range(start, stop)):
-            sample_indices_right[right_write_offset[thread_idx] + i] = \
-                tmp_right[j]
-
-    return (sample_indices_left[:left_counts.sum()],
-            sample_indices_right[:right_counts.sum()])
+    return (sample_indices[:right_child_position],
+            sample_indices[right_child_position:])
 
 
 @njit()

@@ -5,7 +5,8 @@ import pytest
 
 from pygbm.splitting import _find_histogram_split
 from pygbm.splitting import (SplittingContext, find_node_split,
-                             find_node_split_subtraction)
+                             find_node_split_subtraction,
+                             split_indices)
 
 
 @pytest.mark.parametrize('n_bins', [3, 32, 256])
@@ -82,12 +83,12 @@ def test_split_vs_split_subtraction(constant_hessian):
     si_right, hists_right = find_node_split(context, sample_indices_right)
 
     # split left with subtraction method
-    si_left_sub, hists_left_sub = find_node_split_subtraction(context,
-        sample_indices_left, hists_parent, hists_right)
+    si_left_sub, hists_left_sub = find_node_split_subtraction(
+        context, sample_indices_left, hists_parent, hists_right)
 
     # split right with subtraction method
-    si_right_sub, hists_right_sub = find_node_split_subtraction(context,
-        sample_indices_right, hists_parent, hists_left)
+    si_right_sub, hists_right_sub = find_node_split_subtraction(
+        context, sample_indices_right, hists_parent, hists_left)
 
     # make sure histograms from classical and subtraction method are the same
     for hists, hists_sub in ((hists_left, hists_left_sub),
@@ -156,12 +157,12 @@ def test_gradient_and_hessian_sanity(constant_hessian):
     si_right, hists_right = find_node_split(context, sample_indices_right)
 
     # split left with subtraction method
-    si_left_sub, hists_left_sub = find_node_split_subtraction(context,
-        sample_indices_left, hists_parent, hists_right)
+    si_left_sub, hists_left_sub = find_node_split_subtraction(
+        context, sample_indices_left, hists_parent, hists_right)
 
     # split right with subtraction method
-    si_right_sub, hists_right_sub = find_node_split_subtraction(context,
-        sample_indices_right, hists_parent, hists_left)
+    si_right_sub, hists_right_sub = find_node_split_subtraction(
+        context, sample_indices_right, hists_parent, hists_left)
 
     # make sure that si.gradient_left + si.gradient_right have their expected
     # value, same for hessians
@@ -204,3 +205,54 @@ def test_gradient_and_hessian_sanity(constant_hessian):
 
         assert_almost_equal(gradients, expected_gradient, decimal=4)
         assert_almost_equal(hessians, expected_hessian, decimal=4)
+
+
+def test_split_indices():
+    # Check that split_indices returns the correct splits and that
+    # splitting_context.partition is consistent with what is returned.
+    rng = np.random.RandomState(421)
+
+    n_bins = 5
+    n_features = 2
+    n_samples = 10
+    l2_regularization = 0.
+    min_hessian_to_split = 1e-3
+
+    # split will happen on feature 1 and on bin 3
+    binned_features = [[0, 0],
+                       [0, 3],
+                       [0, 4],
+                       [0, 0],
+                       [0, 0],
+                       [0, 0],
+                       [0, 0],
+                       [0, 4],
+                       [0, 0],
+                       [0, 4]]
+    binned_features = np.asfortranarray(binned_features, dtype=np.uint8)
+    sample_indices = np.arange(n_samples, dtype=np.uint32)
+    all_gradients = rng.randn(n_samples).astype(np.float32)
+    all_hessians = np.ones(1, dtype=np.float32)
+
+    context = SplittingContext(n_features, binned_features, n_bins,
+                               all_gradients, all_hessians,
+                               l2_regularization, min_hessian_to_split)
+
+    assert_array_almost_equal(sample_indices, context.partition)
+    si_root, _ = find_node_split(context, sample_indices)
+
+    # sanity checks for best split
+    assert si_root.feature_idx == 1
+    assert si_root.bin_idx == 3
+
+    samples_left, samples_right = split_indices(
+        context, si_root, context.partition.view())
+    assert set(samples_left) == set([0, 1, 3, 4, 5, 6, 8])
+    assert set(samples_right) == set([2, 7, 9])
+
+    position_right = len(samples_left)
+
+    assert_array_almost_equal(samples_left,
+                              context.partition[:position_right])
+    assert_array_almost_equal(samples_right,
+                              context.partition[position_right:])
