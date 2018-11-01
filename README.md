@@ -1,4 +1,6 @@
-# pygbm [![Build Status](https://travis-ci.org/ogrisel/pygbm.svg?branch=master)](https://travis-ci.org/ogrisel/pygbm)
+# pygbm [![Build Status](https://travis-ci.org/ogrisel/pygbm.svg?branch=master)](https://travis-ci.org/ogrisel/pygbm) [![codecov](https://codecov.io/gh/ogrisel/pygbm/branch/master/graph/badge.svg)](https://codecov.io/gh/ogrisel/pygbm)
+
+
 
 Experimental Gradient Boosting Machines in Python.
 
