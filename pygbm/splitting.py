@@ -39,6 +39,10 @@ class SplitInfo:
     ('n_bins', uint32),
     ('all_gradients', float32[::1]),
     ('all_hessians', float32[::1]),
+    ('ordered_gradients', float32[::1]),
+    ('ordered_hessians', float32[::1]),
+    ('sum_gradients', float32),
+    ('sum_hessians', float32),
     ('constant_hessian', uint8),
     ('constant_hessian_value', float32),
     ('l2_regularization', float32),
@@ -56,6 +60,11 @@ class SplittingContext:
         self.n_bins = n_bins
         self.all_gradients = all_gradients
         self.all_hessians = all_hessians
+        # for root node, gradients and hessians are already ordered
+        self.ordered_gradients = all_gradients.copy()
+        self.ordered_hessians = all_hessians.copy()
+        self.sum_gradients = self.all_gradients.sum()
+        self.sum_hessians = self.all_hessians.sum()
         self.constant_hessian = all_hessians.shape[0] == 1
         self.l2_regularization = l2_regularization
         self.min_hessian_to_split = min_hessian_to_split
@@ -192,61 +201,108 @@ def split_indices(context, split_info, sample_indices):
             sample_indices[right_child_position:])
 
 
-@njit()
+@njit(parallel=True)
 def find_node_split(context, sample_indices):
-    loss_dtype = context.all_gradients.dtype
+    """For each feature, find the best bin to split on by scanning data.
 
-    if sample_indices.shape[0] == context.all_gradients.shape[0]:
-        # Root node: the ordering of sample_indices and all_gradients
-        # are expected to be consistent in this case.
-        ordered_gradients = context.all_gradients
-        ordered_hessians = context.all_hessians
-    else:
-        ordered_gradients = np.empty_like(sample_indices, dtype=loss_dtype)
-        if context.constant_hessian:
-            ordered_hessians = context.all_hessians
-            for i, sample_idx in enumerate(sample_indices):
-                ordered_gradients[i] = context.all_gradients[sample_idx]
+    This is done by calling _find_histogram_split that compute histograms
+    for the samples that reached this node.
+
+    Returns the best SplitInfo among all features, along with all the feature
+    histograms that can be latter used to compute the sibling or children
+    histograms by substraction.
+    """
+
+    ctx = context  # shorter name to avoid various line breaks
+    n_samples = sample_indices.shape[0]
+
+    # Need to declare local variables, else they're not updated
+    # (see numba issue 3459)
+    ordered_gradients = ctx.ordered_gradients
+    ordered_hessians = ctx.ordered_hessians
+
+    # Populate ordered_gradients and ordered_hessians. (Already done for root)
+    # This is a parallelized version of the following vanilla code:
+    # for i range(n_samples):
+    #     ctx.ordered_gradients[i] = ctx.all_gradients[samples_indices[i]]
+    if sample_indices.shape[0] != ctx.all_gradients.shape[0]:
+        n_threads = numba.config.NUMBA_DEFAULT_NUM_THREADS
+        # Each threads writes data in ordered_xx from starts[thread_idx] to
+        # starts[thread_idx] + sizes[thread_idx]
+        sizes = np.full(n_threads, n_samples // n_threads, dtype=np.int32)
+        sizes[:n_samples % n_threads] += 1
+        starts = np.zeros(n_threads, dtype=np.int32)
+        starts[1:] = np.cumsum(sizes[:-1])
+        if ctx.constant_hessian:
+            for thread_idx in prange(n_threads):
+                for i in range(starts[thread_idx],
+                               starts[thread_idx] + sizes[thread_idx]):
+                    ordered_gradients[i] = ctx.all_gradients[sample_indices[i]]
         else:
-            ordered_hessians = np.empty_like(sample_indices,
-                                             dtype=loss_dtype)
-            for i, sample_idx in enumerate(sample_indices):
-                ordered_gradients[i] = context.all_gradients[sample_idx]
-                ordered_hessians[i] = context.all_hessians[sample_idx]
+            for thread_idx in prange(n_threads):
+                for i in range(starts[thread_idx],
+                               starts[thread_idx] + sizes[thread_idx]):
+                    ordered_gradients[i] = ctx.all_gradients[sample_indices[i]]
+                    ordered_hessians[i] = ctx.all_hessians[sample_indices[i]]
 
-    sum_gradients = ordered_gradients.sum()
-    if context.constant_hessian:
-        n_samples = sample_indices.shape[0]
-        sum_hessians = context.constant_hessian_value * float32(n_samples)
+    ctx.sum_gradients = ctx.ordered_gradients[:n_samples].sum()
+    if ctx.constant_hessian:
+        ctx.sum_hessians = ctx.constant_hessian_value * float32(n_samples)
     else:
-        sum_hessians = ordered_hessians.sum()
+        ctx.sum_hessians = ctx.ordered_hessians[:n_samples].sum()
 
-    return _parallel_find_split(
-        context, sample_indices, ordered_gradients, ordered_hessians,
-        sum_gradients, sum_hessians)
+    # Pre-allocate the results datastructure to be able to use prange:
+    # numba jitclass do not seem to properly support default values for kwargs.
+    split_infos = [SplitInfo(0, 0, 0, 0., 0., 0., 0.)
+                   for i in range(context.n_features)]
+    for feature_idx in prange(context.n_features):
+        split_info = _find_histogram_split(context, feature_idx,
+                                           sample_indices)
+        split_infos[feature_idx] = split_info
+
+    return _find_best_feature_to_split_helper(context.n_features,
+                                              context.n_bins, split_infos)
 
 
-@njit()
+@njit(parallel=True)
 def find_node_split_subtraction(context, sample_indices, parent_histograms,
                                 sibling_histograms):
+    """For each feature, find the best bin to split by histogram substraction
+
+    This in turn calls _find_histogram_split_subtraction that does not need
+    to scan the samples from this node and can therefore be significantly
+    faster than computing the histograms from data.
+
+    Returns the best SplitInfo among all features, along with all the feature
+    histograms that can be latter used to compute the sibling or children
+    histograms by substraction.
+    """
 
     # We can pick any feature (here the first) in the histograms to
     # compute the gradients: they must be the same across all features
     # anyway, we have tests ensuring this. Maybe a more robust way would
     # be to compute an average but it's probably not worth it.
-    sum_gradients = (parent_histograms[0]['sum_gradients'].sum() -
-                     sibling_histograms[0]['sum_gradients'].sum())
+    context.sum_gradients = (parent_histograms[0]['sum_gradients'].sum() -
+                             sibling_histograms[0]['sum_gradients'].sum())
 
     if context.constant_hessian:
         n_samples = sample_indices.shape[0]
-        sum_hessians = context.constant_hessian_value * float32(n_samples)
+        context.sum_hessians = \
+            context.constant_hessian_value * float32(n_samples)
     else:
-        sum_hessians = (parent_histograms[0]['sum_hessians'].sum() -
-                        sibling_histograms[0]['sum_hessians'].sum())
+        context.sum_hessians = (parent_histograms[0]['sum_hessians'].sum() -
+                                sibling_histograms[0]['sum_hessians'].sum())
 
-    return _parallel_find_split_subtraction(
-        context, parent_histograms, sibling_histograms,
-        sum_gradients, sum_hessians)
+    # Pre-allocate the results datastructure to be able to use prange
+    split_infos = [SplitInfo(0, 0, 0, 0., 0., 0., 0.)
+                   for i in range(context.n_features)]
+    for feature_idx in prange(context.n_features):
+        split_info = _find_histogram_split_subtraction(
+            context, feature_idx, parent_histograms, sibling_histograms)
+        split_infos[feature_idx] = split_info
+
+    return _find_best_feature_to_split_helper(
+        context.n_features, context.n_bins, split_infos)
 
 
 @njit
@@ -266,66 +322,15 @@ def _find_best_feature_to_split_helper(n_features, n_bins, split_infos):
     return best_split_info, histograms
 
 
-@njit(parallel=True)
-def _parallel_find_split(splitter, sample_indices, ordered_gradients,
-                         ordered_hessians, sum_gradients, sum_hessians):
-    """For each feature, find the best bin to split on by scanning data.
-
-    This is done by calling _find_histogram_split that compute histograms
-    for the samples that reached this node.
-
-    Returns the best SplitInfo among all features, along with all the feature
-    histograms that can be latter used to compute the sibling or children
-    histograms by substraction.
-    """
-    # Pre-allocate the results datastructure to be able to use prange:
-    # numba jitclass do not seem to properly support default values for kwargs.
-    split_infos = [SplitInfo(0, 0, 0, 0., 0., 0., 0.)
-                   for i in range(splitter.n_features)]
-    for feature_idx in prange(splitter.n_features):
-        split_info = _find_histogram_split(
-            splitter, feature_idx, sample_indices,
-            ordered_gradients, ordered_hessians, sum_gradients, sum_hessians)
-        split_infos[feature_idx] = split_info
-
-    return _find_best_feature_to_split_helper(
-        splitter.n_features, splitter.n_bins, split_infos)
-
-
-@njit(parallel=True)
-def _parallel_find_split_subtraction(context, parent_histograms,
-                                     sibling_histograms,
-                                     sum_gradients, sum_hessians):
-    """For each feature, find the best bin to split by histogram substraction
-
-    This in turn calls _find_histogram_split_subtraction that does not need
-    to scan the samples from this node and can therefore be significantly
-    faster than computing the histograms from data.
-
-    Returns the best SplitInfo among all features, along with all the feature
-    histograms that can be latter used to compute the sibling or children
-    histograms by substraction.
-    """
-    # Pre-allocate the results datastructure to be able to use prange
-    split_infos = [SplitInfo(0, 0, 0, 0., 0., 0., 0.)
-                   for i in range(context.n_features)]
-    for feature_idx in prange(context.n_features):
-        split_info = _find_histogram_split_subtraction(
-            context, feature_idx, parent_histograms, sibling_histograms,
-            sum_gradients, sum_hessians)
-        split_infos[feature_idx] = split_info
-
-    return _find_best_feature_to_split_helper(
-        context.n_features, context.n_bins, split_infos)
-
-
 @njit(fastmath=True)
-def _find_histogram_split(context, feature_idx, sample_indices,
-                          ordered_gradients, ordered_hessians,
-                          sum_gradients, sum_hessians):
+def _find_histogram_split(context, feature_idx, sample_indices):
     """Compute the histogram for a given feature and return the best bin."""
     binned_feature = context.binned_features.T[feature_idx]
-    root_node = binned_feature.shape[0] == sample_indices.shape[0]
+    n_samples = sample_indices.shape[0]
+
+    root_node = binned_feature.shape[0] == n_samples
+    ordered_gradients = context.ordered_gradients[:n_samples]
+    ordered_hessians = context.ordered_hessians[:n_samples]
 
     if root_node:
         if context.constant_hessian:
@@ -334,7 +339,7 @@ def _find_histogram_split(context, feature_idx, sample_indices,
         else:
             histogram = _build_histogram_root(
                 context.n_bins, binned_feature, ordered_gradients,
-                ordered_hessians)
+                context.ordered_hessians)
     else:
         if context.constant_hessian:
             histogram = _build_histogram_no_hessian(
@@ -345,14 +350,12 @@ def _find_histogram_split(context, feature_idx, sample_indices,
                 context.n_bins, sample_indices, binned_feature,
                 ordered_gradients, ordered_hessians)
 
-    return _find_best_bin_to_split_helper(
-        context, feature_idx, histogram, sum_gradients, sum_hessians)
+    return _find_best_bin_to_split_helper(context, feature_idx, histogram)
 
 
 @njit(fastmath=True)
 def _find_histogram_split_subtraction(context, feature_idx,
-                                      parent_histograms, sibling_histograms,
-                                      sum_gradients, sum_hessians):
+                                      parent_histograms, sibling_histograms):
     """Compute the histogram by substraction of parent and sibling
 
     Uses the identity: hist(parent) = hist(left) + hist(right)
@@ -361,14 +364,12 @@ def _find_histogram_split_subtraction(context, feature_idx,
         context.n_bins, parent_histograms[feature_idx],
         sibling_histograms[feature_idx])
 
-    return _find_best_bin_to_split_helper(
-        context, feature_idx, histogram, sum_gradients, sum_hessians)
+    return _find_best_bin_to_split_helper(context, feature_idx, histogram)
 
 
 @njit(locals={'gradient_left': float32, 'hessian_left': float32},
       fastmath=True)
-def _find_best_bin_to_split_helper(context, feature_idx, histogram,
-                                   sum_gradients, sum_hessians):
+def _find_best_bin_to_split_helper(context, feature_idx, histogram):
     """Find best bin to split on and return the corresponding SplitInfo"""
     # Allocate the structure for the best split information. It can be
     # returned as such (with a negative gain) if the min_hessian_to_split
@@ -386,13 +387,13 @@ def _find_best_bin_to_split_helper(context, feature_idx, histogram,
             hessian_left += histogram[bin_idx]['sum_hessians']
         if hessian_left < context.min_hessian_to_split:
             continue
-        hessian_right = sum_hessians - hessian_left
+        hessian_right = context.sum_hessians - hessian_left
         if hessian_right < context.min_hessian_to_split:
             continue
-        gradient_right = sum_gradients - gradient_left
+        gradient_right = context.sum_gradients - gradient_left
         gain = _split_gain(gradient_left, hessian_left,
                            gradient_right, hessian_right,
-                           sum_gradients, sum_hessians,
+                           context.sum_gradients, context.sum_hessians,
                            context.l2_regularization)
         if gain > best_split.gain:
             best_split.gain = gain
