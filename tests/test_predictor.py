@@ -20,11 +20,16 @@ def test_boston_dataset():
     gradients = y_train.astype(np.float32)
     hessians = np.ones(1, dtype=np.float32)
 
-    grower = TreeGrower(X_train_binned, gradients, hessians, max_leaf_nodes=31)
+    min_samples_leaf = 8
+    max_leaf_nodes = 31
+    grower = TreeGrower(X_train_binned, gradients, hessians,
+                        min_samples_leaf=min_samples_leaf,
+                        max_leaf_nodes=max_leaf_nodes)
     grower.grow()
+
     predictor = grower.make_predictor(bin_thresholds=mapper.bin_thresholds_)
 
-    assert r2_score(y_train, predictor.predict_binned(X_train_binned)) > 0.9
+    assert r2_score(y_train, predictor.predict_binned(X_train_binned)) > 0.75
     assert r2_score(y_test, predictor.predict_binned(X_test_binned)) > 0.65
 
     assert_allclose(predictor.predict(X_train),
@@ -33,5 +38,5 @@ def test_boston_dataset():
     assert_allclose(predictor.predict(X_test),
                     predictor.predict_binned(X_test_binned))
 
-    assert r2_score(y_train, predictor.predict(X_train)) > 0.9
+    assert r2_score(y_train, predictor.predict(X_train)) > 0.75
     assert r2_score(y_test, predictor.predict(X_test)) > 0.65

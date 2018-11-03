@@ -15,6 +15,8 @@ def test_histogram_split(n_bins):
     feature_idx = 0
     l2_regularization = 0
     min_hessian_to_split = 1e-3
+    min_samples_leaf = None
+    min_gain_to_split = 0.
     binned_features = np.asfortranarray(
         rng.randint(0, n_bins, size=(int(1e4), 2)), dtype=np.uint8)
     binned_feature = binned_features.T[feature_idx]
@@ -33,7 +35,8 @@ def test_histogram_split(n_bins):
                                        binned_features, n_bins,
                                        all_gradients, all_hessians,
                                        l2_regularization,
-                                       min_hessian_to_split)
+                                       min_hessian_to_split,
+                                       min_samples_leaf, min_gain_to_split)
 
             split_info = _find_histogram_split(context, feature_idx,
                                                sample_indices)
@@ -41,6 +44,10 @@ def test_histogram_split(n_bins):
             assert split_info.bin_idx == true_bin
             assert split_info.gain >= 0
             assert split_info.feature_idx == feature_idx
+            assert (split_info.n_samples_left + split_info.n_samples_right
+                    == sample_indices.shape[0])
+            # Constant hessian: 1. per sample.
+            assert split_info.n_samples_left == split_info.hessian_left
 
 
 @pytest.mark.parametrize('constant_hessian', [True, False])
@@ -56,6 +63,8 @@ def test_split_vs_split_subtraction(constant_hessian):
     n_samples = 500
     l2_regularization = 0.
     min_hessian_to_split = 1e-3
+    min_samples_leaf = None
+    min_gain_to_split = 0.
 
     binned_features = rng.randint(0, n_bins, size=(n_samples, n_features),
                                   dtype=np.uint8)
@@ -69,7 +78,8 @@ def test_split_vs_split_subtraction(constant_hessian):
 
     context = SplittingContext(n_features, binned_features, n_bins,
                                all_gradients, all_hessians,
-                               l2_regularization, min_hessian_to_split)
+                               l2_regularization, min_hessian_to_split,
+                               min_samples_leaf, min_gain_to_split)
 
     mask = rng.randint(0, 2, n_samples).astype(np.bool)
     sample_indices_left = sample_indices[mask]
@@ -130,6 +140,8 @@ def test_gradient_and_hessian_sanity(constant_hessian):
     n_samples = 500
     l2_regularization = 0.
     min_hessian_to_split = 1e-3
+    min_samples_leaf = 1e-3
+    min_gain_to_split = 0.
 
     binned_features = rng.randint(0, n_bins, size=(n_samples, n_features),
                                   dtype=np.uint8)
@@ -143,7 +155,8 @@ def test_gradient_and_hessian_sanity(constant_hessian):
 
     context = SplittingContext(n_features, binned_features, n_bins,
                                all_gradients, all_hessians,
-                               l2_regularization, min_hessian_to_split)
+                               l2_regularization, min_hessian_to_split,
+                               min_samples_leaf, min_gain_to_split)
 
     mask = rng.randint(0, 2, n_samples).astype(np.bool)
     sample_indices_left = sample_indices[mask]
@@ -215,6 +228,8 @@ def test_split_indices():
     n_samples = 10
     l2_regularization = 0.
     min_hessian_to_split = 1e-3
+    min_samples_leaf = None
+    min_gain_to_split = 0.
 
     # split will happen on feature 1 and on bin 3
     binned_features = [[0, 0],
@@ -234,7 +249,8 @@ def test_split_indices():
 
     context = SplittingContext(n_features, binned_features, n_bins,
                                all_gradients, all_hessians,
-                               l2_regularization, min_hessian_to_split)
+                               l2_regularization, min_hessian_to_split,
+                               min_samples_leaf, min_gain_to_split)
 
     assert_array_almost_equal(sample_indices, context.partition)
     si_root, _ = find_node_split(context, sample_indices)
@@ -254,3 +270,8 @@ def test_split_indices():
                               context.partition[:position_right])
     assert_array_almost_equal(samples_right,
                               context.partition[position_right:])
+
+    # Check that the resulting split indices sizes are consistent with the
+    # count statistics anticipated when looking for the best split.
+    assert samples_left.shape[0] == si_root.n_samples_left
+    assert samples_right.shape[0] == si_root.n_samples_right

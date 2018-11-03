@@ -73,7 +73,7 @@ class TreeGrower:
         self.splitting_context = SplittingContext(
             features_data.shape[1], features_data, n_bins,
             all_gradients, all_hessians, l2_regularization,
-            min_hessian_to_split)
+            min_hessian_to_split, min_samples_leaf, min_gain_to_split)
         self.max_leaf_nodes = max_leaf_nodes
         self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf
@@ -110,6 +110,12 @@ class TreeGrower:
         if (self.max_leaf_nodes is not None and self.max_leaf_nodes == 1):
             self._finalize_leaf(self.root)
             return
+        if (self.min_samples_leaf is not None
+                and self.root.n_samples < self.min_samples_leaf):
+            # Do not even bother computing any splitting statistics.
+            self._finalize_leaf(self.root)
+            return
+
         self._compute_spittability(self.root)
 
     def _compute_spittability(self, node, only_hist=False):
@@ -121,7 +127,6 @@ class TreeGrower:
         the node. If _compute_spittability is called again by the grower on
         this same node, the histograms won't be computed again.
         """
-
         # Compute split_info and histograms if not already done
         if node.split_info is None and node.histograms is None:
             # If the sibling has less samples, compute its hist first (with
@@ -151,11 +156,16 @@ class TreeGrower:
 
         if only_hist:
             # _compute_spittability was called by a sibling. We only needed to
-            # compute the histogram
+            # compute the histogram.
             return
 
         if node.split_info.gain < self.min_gain_to_split:
+            # Note: this also comprises the case where there is not enough
+            # samples in left or right child: all the SplitInfo (including the
+            # best one which is returned by find_node_split_xxx) would have a
+            # gain of -1
             self._finalize_leaf(node)
+
         else:
             heappush(self.splittable_nodes, node)
 
@@ -200,24 +210,27 @@ class TreeGrower:
         if self.max_depth is not None and depth == self.max_depth:
             self._finalize_leaf(left_child_node)
             self._finalize_leaf(right_child_node)
+            return left_child_node, right_child_node
 
-        elif (self.max_leaf_nodes is not None
+        if (self.max_leaf_nodes is not None
                 and n_leaf_nodes == self.max_leaf_nodes):
             self._finalize_leaf(left_child_node)
             self._finalize_leaf(right_child_node)
             self._finalize_splittable_nodes()
+            return left_child_node, right_child_node
 
+        if (self.min_samples_leaf is not None
+                and left_child_node.n_samples < self.min_samples_leaf * 2):
+            self._finalize_leaf(left_child_node)
         else:
-            if (self.min_samples_leaf is not None
-                    and len(sample_indices_left) < self.min_samples_leaf):
-                self._finalize_leaf(left_child_node)
-            else:
-                self._compute_spittability(left_child_node)
-            if (self.min_samples_leaf is not None
-                    and len(sample_indices_right) < self.min_samples_leaf):
-                self._finalize_leaf(right_child_node)
-            else:
-                self._compute_spittability(right_child_node)
+            self._compute_spittability(left_child_node)
+
+        if (self.min_samples_leaf is not None
+                and right_child_node.n_samples < self.min_samples_leaf * 2):
+            self._finalize_leaf(right_child_node)
+        else:
+            self._compute_spittability(right_child_node)
+
         return left_child_node, right_child_node
 
     def can_split_further(self):

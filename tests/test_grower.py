@@ -1,10 +1,11 @@
 import numpy as np
 
-from numpy.testing import assert_allclose
+from numpy.testing import assert_array_almost_equal
 import pytest
 from pytest import approx
 
 from pygbm.grower import TreeGrower
+from pygbm.binning import BinMapper
 
 
 def _make_training_data(n_bins=256, constant_hessian=True):
@@ -85,7 +86,8 @@ def test_grow_tree(n_bins, constant_hessian, stopping_param, shrinkage):
         stopping_param = {"min_gain_to_split": 0.01}
 
     grower = TreeGrower(features_data, all_gradients, all_hessians,
-                        n_bins=n_bins, shrinkage=shrinkage, **stopping_param)
+                        n_bins=n_bins, shrinkage=shrinkage,
+                        min_samples_leaf=1, **stopping_param)
 
     # The root node is not yet splitted, but the best possible split has
     # already been evaluated:
@@ -146,7 +148,8 @@ def test_predictor_from_grower():
     features_data, all_gradients, all_hessians = _make_training_data(
         n_bins=n_bins)
     grower = TreeGrower(features_data, all_gradients, all_hessians,
-                        n_bins=n_bins, shrinkage=1., max_leaf_nodes=3)
+                        n_bins=n_bins, shrinkage=1., max_leaf_nodes=3,
+                        min_samples_leaf=5)
     grower.grow()
     assert grower.n_nodes == 5  # (2 decision nodes + 3 leaves)
 
@@ -175,8 +178,54 @@ def test_predictor_from_grower():
     ], dtype=np.uint8)
     predictions = predictor.predict_binned(input_data)
     expected_targets = [-1, -1, -1, -1, -1, -1, 1, 1, 1]
-    assert_allclose(predictions, expected_targets)
+    assert_array_almost_equal(predictions, expected_targets, decimal=5)
 
     # Check that training set can be recovered exactly:
     predictions = predictor.predict_binned(features_data)
-    assert_allclose(predictions, all_gradients)
+    assert_array_almost_equal(predictions, all_gradients, decimal=5)
+
+
+@pytest.mark.parametrize(
+    'n_samples, min_samples_leaf, n_bins, constant_hessian, noise',
+    [
+        (11, 10, 7, True, 0),
+        (13, 10, 42, False, 0),
+        (56, 10, 255, True, 0.1),
+        (101, 3, 7, True, 0),
+        (200, 42, 42, False, 0),
+        (300, 55, 255, True, 0.1),
+        (300, 301, 255, True, 0.1),
+    ]
+)
+def test_min_samples_leaf(n_samples, min_samples_leaf, n_bins,
+                          constant_hessian, noise):
+    rng = np.random.RandomState(seed=0)
+    # data = linear target, 3 features, 1 irrelevant.
+    X = rng.normal(size=(n_samples, 3))
+    y = X[:, 0] - X[:, 1]
+    if noise:
+        y_scale = y.std()
+        y += rng.normal(scale=noise, size=n_samples) * y_scale
+    mapper = BinMapper(max_bins=n_bins)
+    X = mapper.fit_transform(X)
+
+    all_gradients = y.astype(np.float32)
+    if constant_hessian:
+        all_hessians = np.ones(shape=1, dtype=np.float32)
+    else:
+        all_hessians = np.ones_like(all_gradients)
+    grower = TreeGrower(X, all_gradients, all_hessians,
+                        n_bins=n_bins, shrinkage=1.,
+                        min_samples_leaf=min_samples_leaf,
+                        max_leaf_nodes=n_samples)
+    grower.grow()
+    predictor = grower.make_predictor(bin_thresholds=mapper.bin_thresholds_)
+
+    if n_samples >= min_samples_leaf:
+        for node in predictor.nodes:
+            if node['is_leaf']:
+                assert node['count'] >= min_samples_leaf
+    else:
+        assert predictor.nodes.shape[0] == 1
+        assert predictor.nodes[0]['is_leaf']
+        assert predictor.nodes[0]['count'] == n_samples
