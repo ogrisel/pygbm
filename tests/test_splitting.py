@@ -38,8 +38,8 @@ def test_histogram_split(n_bins):
                                        min_hessian_to_split,
                                        min_samples_leaf, min_gain_to_split)
 
-            split_info = _find_histogram_split(context, feature_idx,
-                                               sample_indices)
+            split_info, _ = _find_histogram_split(context, feature_idx,
+                                                  sample_indices)
 
             assert split_info.bin_idx == true_bin
             assert split_info.gain >= 0
