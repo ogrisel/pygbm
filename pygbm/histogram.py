@@ -9,22 +9,18 @@ HISTOGRAM_DTYPE = np.dtype([
 
 
 @njit
-def _build_histogram_naive(n_bins, sample_indices, binned_feature,
+def _build_histogram_naive(histogram, n_bins, sample_indices, binned_feature,
                            ordered_gradients, ordered_hessians):
-    histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     for i, sample_idx in enumerate(sample_indices):
         bin_idx = binned_feature[sample_idx]
         histogram[bin_idx]['sum_gradients'] += ordered_gradients[i]
         histogram[bin_idx]['sum_hessians'] += ordered_hessians[i]
         histogram[bin_idx]['count'] += 1
-    return histogram
 
 
 @njit
-def _subtract_histograms(n_bins, hist_a, hist_b):
-    """Return hist_a - hist_b"""
-
-    histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
+def _subtract_histograms(histogram, n_bins, hist_a, hist_b):
+    """Compute histogram = hist_a - hist_b"""
 
     sg = 'sum_gradients'
     sh = 'sum_hessians'
@@ -35,13 +31,10 @@ def _subtract_histograms(n_bins, hist_a, hist_b):
         histogram[i][sh] = hist_a[i][sh] - hist_b[i][sh]
         histogram[i][c] = hist_a[i][c] - hist_b[i][c]
 
-    return histogram
-
 
 @njit
-def _build_histogram(n_bins, sample_indices, binned_feature, ordered_gradients,
-                     ordered_hessians):
-    histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
+def _build_histogram(histogram, n_bins, sample_indices, binned_feature,
+                     ordered_gradients, ordered_hessians):
     n_node_samples = sample_indices.shape[0]
     unrolled_upper = (n_node_samples // 4) * 4
 
@@ -72,13 +65,10 @@ def _build_histogram(n_bins, sample_indices, binned_feature, ordered_gradients,
         histogram[bin_idx]['sum_hessians'] += ordered_hessians[i]
         histogram[bin_idx]['count'] += 1
 
-    return histogram
-
 
 @njit
-def _build_histogram_no_hessian(n_bins, sample_indices, binned_feature,
-                                ordered_gradients):
-    histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
+def _build_histogram_no_hessian(histogram, n_bins, sample_indices,
+                                binned_feature, ordered_gradients):
     n_node_samples = sample_indices.shape[0]
     unrolled_upper = (n_node_samples // 4) * 4
 
@@ -103,18 +93,16 @@ def _build_histogram_no_hessian(n_bins, sample_indices, binned_feature,
         histogram[bin_idx]['sum_gradients'] += ordered_gradients[i]
         histogram[bin_idx]['count'] += 1
 
-    return histogram
-
 
 @njit
-def _build_histogram_root_no_hessian(n_bins, binned_feature, all_gradients):
+def _build_histogram_root_no_hessian(histogram, n_bins, binned_feature,
+                                     all_gradients):
     """Special case for the root node
 
     The root node has to find the a split among all the samples from the
     training set. binned_feature and all_gradients already have a consistent
     ordering.
     """
-    histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     n_node_samples = binned_feature.shape[0]
     unrolled_upper = (n_node_samples // 4) * 4
 
@@ -139,11 +127,9 @@ def _build_histogram_root_no_hessian(n_bins, binned_feature, all_gradients):
         histogram[bin_idx]['sum_gradients'] += all_gradients[i]
         histogram[bin_idx]['count'] += 1
 
-    return histogram
-
 
 @njit
-def _build_histogram_root(n_bins, binned_feature, all_gradients,
+def _build_histogram_root(histogram, n_bins, binned_feature, all_gradients,
                           all_hessians):
     """Special case for the root node
 
@@ -151,7 +137,6 @@ def _build_histogram_root(n_bins, binned_feature, all_gradients,
     training set. binned_feature and all_gradients already have a consistent
     ordering.
     """
-    histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     n_node_samples = binned_feature.shape[0]
     unrolled_upper = (n_node_samples // 4) * 4
 
@@ -181,5 +166,3 @@ def _build_histogram_root(n_bins, binned_feature, all_gradients,
         histogram[bin_idx]['sum_gradients'] += all_gradients[i]
         histogram[bin_idx]['sum_hessians'] += all_hessians[i]
         histogram[bin_idx]['count'] += 1
-
-    return histogram

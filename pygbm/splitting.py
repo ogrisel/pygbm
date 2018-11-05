@@ -1,7 +1,6 @@
 # from collections import namedtuple
 import numpy as np
-from numba import (njit, jitclass, prange, float32, uint8, uint32, typeof,
-                   optional)
+from numba import njit, jitclass, prange, float32, uint8, uint32, optional
 import numba
 from .histogram import _build_histogram
 from .histogram import _subtract_histograms
@@ -21,7 +20,6 @@ from .histogram import HISTOGRAM_DTYPE
     ('hessian_right', float32),
     ('n_samples_left', uint32),
     ('n_samples_right', uint32),
-    ('histogram', typeof(HISTOGRAM_DTYPE)[:]),  # array of size n_bins
 ])
 class SplitInfo:
     def __init__(self, gain=-1., feature_idx=0, bin_idx=0,
@@ -266,13 +264,18 @@ def find_node_split(context, sample_indices):
     # numba jitclass do not seem to properly support default values for kwargs.
     split_infos = [SplitInfo(-1., 0, 0, 0., 0., 0., 0., 0, 0)
                    for i in range(context.n_features)]
+    # need to convert to int64, it's a numba bug. See issue #2756
+    histograms = np.zeros(
+        shape=(np.int64(context.n_features), np.int64(context.n_bins)),
+        dtype=HISTOGRAM_DTYPE
+    )
     for feature_idx in prange(context.n_features):
-        split_info = _find_histogram_split(context, feature_idx,
-                                           sample_indices)
+        split_info = _find_histogram_split(
+            context, feature_idx, sample_indices, histograms)
         split_infos[feature_idx] = split_info
 
-    return _find_best_feature_to_split_helper(context.n_features,
-                                              context.n_bins, split_infos)
+    split_info = _find_best_feature_to_split_helper(split_infos)
+    return split_info, histograms
 
 
 @njit(parallel=True)
@@ -307,38 +310,38 @@ def find_node_split_subtraction(context, sample_indices, parent_histograms,
     # Pre-allocate the results datastructure to be able to use prange
     split_infos = [SplitInfo(-1., 0, 0, 0., 0., 0., 0., 0, 0)
                    for i in range(context.n_features)]
+    # need to convert to int64, it's a numba bug. See issue #2756
+    histograms = np.empty(
+        shape=(np.int64(context.n_features), np.int64(context.n_bins)),
+        dtype=HISTOGRAM_DTYPE
+    )
     for feature_idx in prange(context.n_features):
         split_info = _find_histogram_split_subtraction(
-            context, feature_idx, parent_histograms, sibling_histograms,
-            n_samples)
+            context, feature_idx, histograms, parent_histograms,
+            sibling_histograms, n_samples)
         split_infos[feature_idx] = split_info
 
-    return _find_best_feature_to_split_helper(
-        context.n_features, context.n_bins, split_infos)
+    split_info = _find_best_feature_to_split_helper(split_infos)
+    return split_info, histograms
 
 
 @njit
-def _find_best_feature_to_split_helper(n_features, n_bins, split_infos):
+def _find_best_feature_to_split_helper(split_infos):
     best_gain = None
-    # need to convert to int64, it's a numba bug. See issue #2756
-    histograms = np.empty(
-        shape=(np.int64(n_features), np.int64(n_bins)),
-        dtype=HISTOGRAM_DTYPE
-    )
     for i, split_info in enumerate(split_infos):
-        histograms[i, :] = split_info.histogram
         gain = split_info.gain
         if best_gain is None or gain > best_gain:
             best_gain = gain
             best_split_info = split_info
-    return best_split_info, histograms
+    return best_split_info
 
 
 @njit(fastmath=True)
-def _find_histogram_split(context, feature_idx, sample_indices):
+def _find_histogram_split(context, feature_idx, sample_indices, histograms):
     """Compute the histogram for a given feature and return the best bin."""
     n_samples = sample_indices.shape[0]
     binned_feature = context.binned_features.T[feature_idx]
+    histogram = histograms[feature_idx]
 
     root_node = binned_feature.shape[0] == n_samples
     ordered_gradients = context.ordered_gradients[:n_samples]
@@ -346,20 +349,20 @@ def _find_histogram_split(context, feature_idx, sample_indices):
 
     if root_node:
         if context.constant_hessian:
-            histogram = _build_histogram_root_no_hessian(
-                context.n_bins, binned_feature, ordered_gradients)
+            _build_histogram_root_no_hessian(
+                histogram, context.n_bins, binned_feature, ordered_gradients)
         else:
-            histogram = _build_histogram_root(
-                context.n_bins, binned_feature, ordered_gradients,
+            _build_histogram_root(
+                histogram, context.n_bins, binned_feature, ordered_gradients,
                 context.ordered_hessians)
     else:
         if context.constant_hessian:
-            histogram = _build_histogram_no_hessian(
-                context.n_bins, sample_indices, binned_feature,
+            _build_histogram_no_hessian(
+                histogram, context.n_bins, sample_indices, binned_feature,
                 ordered_gradients)
         else:
-            histogram = _build_histogram(
-                context.n_bins, sample_indices, binned_feature,
+            _build_histogram(
+                histogram, context.n_bins, sample_indices, binned_feature,
                 ordered_gradients, ordered_hessians)
 
     return _find_best_bin_to_split_helper(context, feature_idx, histogram,
@@ -367,15 +370,16 @@ def _find_histogram_split(context, feature_idx, sample_indices):
 
 
 @njit(fastmath=True)
-def _find_histogram_split_subtraction(context, feature_idx,
+def _find_histogram_split_subtraction(context, feature_idx, histograms,
                                       parent_histograms, sibling_histograms,
                                       n_samples):
     """Compute the histogram by substraction of parent and sibling
 
     Uses the identity: hist(parent) = hist(left) + hist(right)
     """
-    histogram = _subtract_histograms(
-        context.n_bins, parent_histograms[feature_idx],
+    histogram = histograms[feature_idx, :]
+    _subtract_histograms(
+        context.n_bins, histogram, parent_histograms[feature_idx],
         sibling_histograms[feature_idx])
 
     return _find_best_bin_to_split_helper(context, feature_idx, histogram,
@@ -435,7 +439,6 @@ def _find_best_bin_to_split_helper(context, feature_idx, histogram, n_samples):
             best_split.hessian_right = hessian_right
             best_split.n_samples_right = n_samples_right
 
-    best_split.histogram = histogram
     return best_split
 
 
