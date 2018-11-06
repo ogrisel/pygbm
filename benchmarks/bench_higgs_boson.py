@@ -2,6 +2,8 @@ from urllib.request import urlretrieve
 import os
 from gzip import GzipFile
 from time import time
+import argparse
+
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -14,15 +16,25 @@ from lightgbm import LGBMRegressor
 import numba
 
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--n-leaf-nodes', type=int, default=31)
+parser.add_argument('--n-trees', type=int, default=10)
+parser.add_argument('--no-lightgbm', action="store_true", default=False)
+parser.add_argument('--learning-rate', type=float, default=1.)
+parser.add_argument('--subsample', type=int, default=None)
+parser.add_argument('--max-bins', type=int, default=255)
+args = parser.parse_args()
+
 HERE = os.path.dirname(__file__)
 URL = ("https://archive.ics.uci.edu/ml/machine-learning-databases/00280/"
        "HIGGS.csv.gz")
 m = Memory(location='/tmp', mmap_mode='r')
-n_leaf_nodes = 31
-n_trees = 10
-subsample = None
-lr = 1.
-max_bins = 255
+
+n_leaf_nodes = args.n_leaf_nodes
+n_trees = args.n_trees
+subsample = args.subsample
+lr = args.learning_rate
+max_bins = args.max_bins
 
 
 @m.cache
@@ -54,26 +66,17 @@ if subsample is not None:
 n_samples, n_features = data_train.shape
 print(f"Training set with {n_samples} records with {n_features} features.")
 
-print("Fitting a LightGBM model...")
-tic = time()
-lightgbm_model = LGBMRegressor(n_estimators=n_trees, num_leaves=n_leaf_nodes,
-                               learning_rate=lr, verbose=10)
-lightgbm_model.fit(data_train, target_train)
-toc = time()
-predicted_test = lightgbm_model.predict(data_test)
-roc_auc = roc_auc_score(target_test, predicted_test)
-print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.4f}")
-
-# model_string = lightgbm_model._Booster._save_model_to_string()
-# in_tree = False
-# for line in model_string.split('\n'):
-#     if line.startswith('Tree'):
-#         in_tree = True
-#     if in_tree and line == '':
-#         in_tree = False
-#         print()
-#     if in_tree:
-#         print(line)
+if not args.no_lightgbm:
+    print("Fitting a LightGBM model...")
+    tic = time()
+    lightgbm_model = LGBMRegressor(n_estimators=n_trees,
+                                   num_leaves=n_leaf_nodes,
+                                   learning_rate=lr, verbose=10)
+    lightgbm_model.fit(data_train, target_train)
+    toc = time()
+    predicted_test = lightgbm_model.predict(data_test)
+    roc_auc = roc_auc_score(target_test, predicted_test)
+    print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.4f}")
 
 print("JIT compiling code for the pygbm model...")
 tic = time()
@@ -85,7 +88,6 @@ pygbm_model = GradientBoostingMachine(learning_rate=lr, max_iter=1,
 pygbm_model.fit(data_train[:100], target_train[:100])
 toc = time()
 print(f"done in {toc - tic:.3f}s")
-
 
 print("Fitting a pygbm model...")
 tic = time()
@@ -99,10 +101,6 @@ toc = time()
 predicted_test = pygbm_model.predict(data_test)
 roc_auc = roc_auc_score(target_test, predicted_test)
 print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.4f}")
-
-# for predictor in pygbm_model.predictors_:
-#     print(predictor.nodes)
-
 
 if hasattr(numba, 'threading_layer'):
     print("Threading layer chosen: %s" % numba.threading_layer())
