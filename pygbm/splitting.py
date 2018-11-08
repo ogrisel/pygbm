@@ -426,7 +426,7 @@ def _find_best_bin_to_split_helper(context, feature_idx, histogram, n_samples):
                            context.sum_gradients, context.sum_hessians,
                            context.l2_regularization)
 
-        if gain > best_split.gain and gain >= context.min_gain_to_split:
+        if gain > best_split.gain and gain > context.min_gain_to_split:
             best_split.gain = gain
             best_split.feature_idx = feature_idx
             best_split.bin_idx = bin_idx

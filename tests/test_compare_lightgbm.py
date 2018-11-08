@@ -59,9 +59,9 @@ def test_same_predictions_easy_target(seed, n_samples, max_leaf_nodes):
 
     pred_lgbm = est_lightgbm.predict(X_train)
     pred_pygbm = est_pygbm.predict(X_train)
-    np.testing.assert_array_almost_equal(pred_lgbm, pred_pygbm, decimal=5)
+    np.testing.assert_array_almost_equal(pred_lgbm, pred_pygbm, decimal=3)
 
     if max_leaf_nodes < 10 and n_samples > 1000:
         pred_lgbm = est_lightgbm.predict(X_test)
         pred_pygbm = est_pygbm.predict(X_test)
-        np.testing.assert_array_almost_equal(pred_lgbm, pred_pygbm, decimal=5)
+        np.testing.assert_array_almost_equal(pred_lgbm, pred_pygbm, decimal=3)

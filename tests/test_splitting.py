@@ -275,3 +275,34 @@ def test_split_indices():
     # count statistics anticipated when looking for the best split.
     assert samples_left.shape[0] == si_root.n_samples_left
     assert samples_right.shape[0] == si_root.n_samples_right
+
+
+def test_min_gain_to_split():
+    # Try to split a pure node (all gradients are equal, same for hessians)
+    # with min_gain_to_split = 0 and make sure that the node is not split (best
+    # possible gain = -1). Note: before the strict inequality comparison, this
+    # test would fail because the node would be split with a gain of 0.
+    rng = np.random.RandomState(42)
+    feature_idx = 0
+    l2_regularization = 0
+    min_hessian_to_split = 0
+    min_samples_leaf = 1
+    min_gain_to_split = 0.
+    n_bins = 255
+    n_samples = 100
+    binned_features = np.asfortranarray(
+        rng.randint(0, n_bins, size=(n_samples, 2)), dtype=np.uint8)
+    binned_feature = binned_features.T[feature_idx]
+    sample_indices = np.arange(n_samples, dtype=np.uint32)
+    all_hessians = np.ones_like(binned_feature, dtype=np.float32)
+    all_gradients = np.ones_like(binned_feature, dtype=np.float32)
+
+    context = SplittingContext(binned_features.shape[1],
+                               binned_features, n_bins,
+                               all_gradients, all_hessians,
+                               l2_regularization,
+                               min_hessian_to_split,
+                               min_samples_leaf, min_gain_to_split)
+
+    split_info, _ = _find_histogram_split(context, feature_idx, sample_indices)
+    assert split_info.gain == -1

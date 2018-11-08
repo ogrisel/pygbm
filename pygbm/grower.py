@@ -159,11 +159,11 @@ class TreeGrower:
             # compute the histogram.
             return
 
-        if node.split_info.gain < self.min_gain_to_split:
-            # Note: this also comprises the case where there is not enough
-            # samples in left or right child: all the SplitInfo (including the
-            # best one which is returned by find_node_split_xxx) would have a
-            # gain of -1
+        if node.split_info.gain <= 0:  # no valid split
+            # Note: this condition is reached if either all the leaves are
+            # pure (best gain = 0), or if no split would satisfy the
+            # constraints, (min_hessians_to_split, min_gain_to_split,
+            # min_samples_leaf)
             self._finalize_leaf(node)
 
         else:
