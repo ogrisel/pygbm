@@ -120,7 +120,7 @@ class TreeGrower:
 
     def _compute_spittability(self, node, only_hist=False):
         """Compute histograms and split_info of a node and either make it a
-        leave or push it on the splittable node heap.
+        leaf or push it on the splittable node heap.
 
         only_hist is used when _compute_spittability was called by a sibling
         node: we only want to compute the histograms, not finalize or push
