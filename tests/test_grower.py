@@ -229,3 +229,32 @@ def test_min_samples_leaf(n_samples, min_samples_leaf, n_bins,
         assert predictor.nodes.shape[0] == 1
         assert predictor.nodes[0]['is_leaf']
         assert predictor.nodes[0]['count'] == n_samples
+
+
+@pytest.mark.parametrize('n_samples, min_samples_leaf', [
+                         (99, 50),
+                         (100, 50)])
+def test_min_samples_leaf_root(n_samples, min_samples_leaf):
+    # Make sure root node isn't split if n_samples is not at least twice
+    # min_samples_leaf
+    rng = np.random.RandomState(seed=0)
+
+    max_bins = 255
+
+    # data = linear target, 3 features, 1 irrelevant.
+    X = rng.normal(size=(n_samples, 3))
+    y = X[:, 0] - X[:, 1]
+    mapper = BinMapper(max_bins=max_bins)
+    X = mapper.fit_transform(X)
+
+    all_gradients = y.astype(np.float32)
+    all_hessians = np.ones(shape=1, dtype=np.float32)
+    grower = TreeGrower(X, all_gradients, all_hessians,
+                        max_bins=max_bins, shrinkage=1.,
+                        min_samples_leaf=min_samples_leaf,
+                        max_leaf_nodes=n_samples)
+    grower.grow()
+    if n_samples >= min_samples_leaf * 2:
+        assert len(grower.finalized_leaves) >= 2
+    else:
+        assert len(grower.finalized_leaves) == 1

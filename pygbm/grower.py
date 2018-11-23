@@ -122,7 +122,7 @@ class TreeGrower:
             self._finalize_leaf(self.root)
             return
         if (self.min_samples_leaf is not None
-                and self.root.n_samples < self.min_samples_leaf):
+                and self.root.n_samples < 2 * self.min_samples_leaf):
             # Do not even bother computing any splitting statistics.
             self._finalize_leaf(self.root)
             return
