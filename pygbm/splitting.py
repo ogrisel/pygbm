@@ -40,7 +40,8 @@ class SplitInfo:
 @jitclass([
     ('n_features', uint32),
     ('binned_features', uint8[::1, :]),
-    ('n_bins', uint32),
+    ('max_bins', uint32),
+    ('n_bins_per_feature', uint32[::1]),
     ('min_samples_leaf', optional(uint32)),
     ('min_gain_to_split', float32),
     ('all_gradients', float32[::1]),
@@ -58,13 +59,16 @@ class SplitInfo:
     ('right_indices_buffer', uint32[::1]),
 ])
 class SplittingContext:
-    def __init__(self, n_features, binned_features, n_bins,
-                 all_gradients, all_hessians, l2_regularization,
-                 min_hessian_to_split=1e-3, min_samples_leaf=None,
-                 min_gain_to_split=0.):
+    def __init__(self, n_features, binned_features, max_bins,
+                 n_bins_per_feature, all_gradients, all_hessians,
+                 l2_regularization, min_hessian_to_split=1e-3,
+                 min_samples_leaf=None, min_gain_to_split=0.):
         self.n_features = n_features
         self.binned_features = binned_features
-        self.n_bins = n_bins
+        # Note: all histograms will have <max_bins> bins, but some of the
+        # last bins may be unused if n_bins_per_feature[f] < max_bins
+        self.max_bins = max_bins
+        self.n_bins_per_feature = n_bins_per_feature
         self.all_gradients = all_gradients
         self.all_hessians = all_hessians
         # for root node, gradients and hessians are already ordered
@@ -265,7 +269,7 @@ def find_node_split(context, sample_indices):
     split_infos = [SplitInfo(-1., 0, 0, 0., 0., 0., 0., 0, 0)
                    for i in range(context.n_features)]
     histograms = np.empty(
-        shape=(np.int64(context.n_features), np.int64(context.n_bins)),
+        shape=(np.int64(context.n_features), np.int64(context.max_bins)),
         dtype=HISTOGRAM_DTYPE
     )
     for feature_idx in prange(context.n_features):
@@ -311,7 +315,7 @@ def find_node_split_subtraction(context, sample_indices, parent_histograms,
     split_infos = [SplitInfo(-1., 0, 0, 0., 0., 0., 0., 0, 0)
                    for i in range(context.n_features)]
     histograms = np.empty(
-        shape=(np.int64(context.n_features), np.int64(context.n_bins)),
+        shape=(np.int64(context.n_features), np.int64(context.max_bins)),
         dtype=HISTOGRAM_DTYPE
     )
     for feature_idx in prange(context.n_features):
@@ -349,19 +353,19 @@ def _find_histogram_split(context, feature_idx, sample_indices):
     if root_node:
         if context.constant_hessian:
             histogram = _build_histogram_root_no_hessian(
-                context.n_bins, binned_feature, ordered_gradients)
+                context.max_bins, binned_feature, ordered_gradients)
         else:
             histogram = _build_histogram_root(
-                context.n_bins, binned_feature, ordered_gradients,
+                context.max_bins, binned_feature, ordered_gradients,
                 context.ordered_hessians)
     else:
         if context.constant_hessian:
             histogram = _build_histogram_no_hessian(
-                context.n_bins, sample_indices, binned_feature,
+                context.max_bins, sample_indices, binned_feature,
                 ordered_gradients)
         else:
             histogram = _build_histogram(
-                context.n_bins, sample_indices, binned_feature,
+                context.max_bins, sample_indices, binned_feature,
                 ordered_gradients, ordered_hessians)
 
     return _find_best_bin_to_split_helper(context, feature_idx, histogram,
@@ -377,8 +381,8 @@ def _find_histogram_split_subtraction(context, feature_idx,
     Uses the identity: hist(parent) = hist(left) + hist(right)
     """
     histogram = _subtract_histograms(
-        context.n_bins, parent_histograms[feature_idx],
-        sibling_histograms[feature_idx])
+        context.max_bins,
+        parent_histograms[feature_idx], sibling_histograms[feature_idx])
 
     return _find_best_bin_to_split_helper(context, feature_idx, histogram,
                                           n_samples)
@@ -397,7 +401,7 @@ def _find_best_bin_to_split_helper(context, feature_idx, histogram, n_samples):
     gradient_left, hessian_left = 0., 0.
     n_samples_left = 0
 
-    for bin_idx in range(context.n_bins):
+    for bin_idx in range(context.n_bins_per_feature[feature_idx]):
         n_samples_left += histogram[bin_idx]['count']
         n_samples_right = n_samples - n_samples_left
 

@@ -86,7 +86,7 @@ def test_grow_tree(n_bins, constant_hessian, stopping_param, shrinkage):
         stopping_param = {"min_gain_to_split": 0.01}
 
     grower = TreeGrower(features_data, all_gradients, all_hessians,
-                        n_bins=n_bins, shrinkage=shrinkage,
+                        max_bins=n_bins, shrinkage=shrinkage,
                         min_samples_leaf=1, **stopping_param)
 
     # The root node is not yet splitted, but the best possible split has
@@ -148,8 +148,8 @@ def test_predictor_from_grower():
     features_data, all_gradients, all_hessians = _make_training_data(
         n_bins=n_bins)
     grower = TreeGrower(features_data, all_gradients, all_hessians,
-                        n_bins=n_bins, shrinkage=1., max_leaf_nodes=3,
-                        min_samples_leaf=5)
+                        max_bins=n_bins, shrinkage=1.,
+                        max_leaf_nodes=3, min_samples_leaf=5)
     grower.grow()
     assert grower.n_nodes == 5  # (2 decision nodes + 3 leaves)
 
@@ -215,7 +215,7 @@ def test_min_samples_leaf(n_samples, min_samples_leaf, n_bins,
     else:
         all_hessians = np.ones_like(all_gradients)
     grower = TreeGrower(X, all_gradients, all_hessians,
-                        n_bins=n_bins, shrinkage=1.,
+                        max_bins=n_bins, shrinkage=1.,
                         min_samples_leaf=min_samples_leaf,
                         max_leaf_nodes=n_samples)
     grower.grow()

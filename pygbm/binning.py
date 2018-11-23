@@ -108,7 +108,7 @@ def _map_num_col_to_bins(data, binning_thresholds, binned):
 class BinMapper(BaseEstimator, TransformerMixin):
     # TODO: write docstrings
 
-    def __init__(self, max_bins=255, subsample=int(1e5), random_state=None):
+    def __init__(self, max_bins=256, subsample=int(1e5), random_state=None):
         self.max_bins = max_bins
         self.subsample = subsample
         self.random_state = random_state
@@ -118,6 +118,11 @@ class BinMapper(BaseEstimator, TransformerMixin):
         self.bin_thresholds_ = find_binning_thresholds(
             X, self.max_bins, subsample=self.subsample,
             random_state=self.random_state)
+
+        self.n_bins_per_feature_ = np.array(
+            [thresholds.shape[0] + 1 for thresholds in self.bin_thresholds_],
+            dtype=np.uint32)
+
         return self
 
     def transform(self, X):

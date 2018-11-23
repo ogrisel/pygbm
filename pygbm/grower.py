@@ -56,8 +56,9 @@ class TreeNode:
 class TreeGrower:
     def __init__(self, features_data, all_gradients, all_hessians,
                  max_leaf_nodes=None, max_depth=None, min_samples_leaf=20,
-                 min_gain_to_split=0., n_bins=256, l2_regularization=0.,
-                 min_hessian_to_split=1e-3, shrinkage=1.):
+                 min_gain_to_split=0., max_bins=256, n_bins_per_feature=None,
+                 l2_regularization=0., min_hessian_to_split=1e-3,
+                 shrinkage=1.):
         if features_data.dtype != np.uint8:
             raise NotImplementedError(
                 "Explicit feature binning required for now")
@@ -70,10 +71,20 @@ class TreeGrower:
         if not features_data.flags.f_contiguous:
             warnings.warn("Binned data should be passed as Fortran contiguous"
                           "array for maximum efficiency.")
+
+        if n_bins_per_feature is None:
+            n_bins_per_feature = max_bins
+
+        if isinstance(n_bins_per_feature, int):
+            n_bins_per_feature = np.array(
+                [n_bins_per_feature] * features_data.shape[1],
+                dtype=np.uint32)
+
         self.splitting_context = SplittingContext(
-            features_data.shape[1], features_data, n_bins,
-            all_gradients, all_hessians, l2_regularization,
-            min_hessian_to_split, min_samples_leaf, min_gain_to_split)
+            features_data.shape[1], features_data, max_bins,
+            n_bins_per_feature, all_gradients, all_hessians,
+            l2_regularization, min_hessian_to_split, min_samples_leaf,
+            min_gain_to_split)
         self.max_leaf_nodes = max_leaf_nodes
         self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf

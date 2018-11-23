@@ -35,21 +35,24 @@ def test_same_predictions_easy_target(seed, min_samples_leaf, n_samples,
     rng = np.random.RandomState(seed=seed)
     n_samples = n_samples
     max_iter = 1
+    max_bins = 256
 
     # data = linear target, 5 features, 3 irrelevant.
     X = rng.normal(size=(n_samples, 5))
     y = X[:, 0] - X[:, 1]
     if n_samples > 255:
-        X = BinMapper().fit_transform(X)
+        X = BinMapper(max_bins=max_bins).fit_transform(X)
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=rng)
 
     est_lightgbm = lb.LGBMRegressor(n_estimators=max_iter,
                                     min_data_in_bin=1,
+                                    max_bin=max_bins,
                                     learning_rate=1,
                                     min_data_in_leaf=min_samples_leaf,
                                     num_leaves=max_leaf_nodes)
     est_pygbm = GradientBoostingMachine(max_iter=max_iter,
+                                        max_bins=max_bins,
                                         learning_rate=1,
                                         validation_split=None, scoring=None,
                                         min_samples_leaf=min_samples_leaf,

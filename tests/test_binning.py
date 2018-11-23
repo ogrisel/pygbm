@@ -99,6 +99,7 @@ def test_bin_mapper_random_data(n_bins):
     for i in range(len(mapper.bin_thresholds_)):
         assert mapper.bin_thresholds_[i].shape == (n_bins - 1,)
         assert mapper.bin_thresholds_[i].dtype == DATA.dtype
+    assert np.all(mapper.n_bins_per_feature_ == n_bins)
 
     # Check that the binned data is approximately balanced across bins.
     for feature_idx in range(n_features):
@@ -190,3 +191,16 @@ def test_bin_mapper_idempotence(n_bins_small, n_bins_large):
     binned_small = mapper_small.fit_transform(data)
     binned_large = mapper_large.fit_transform(binned_small)
     assert_array_equal(binned_small, binned_large)
+
+
+@pytest.mark.parametrize('max_bins', [10, 100, 256])
+@pytest.mark.parametrize('diff', [-5, 0, 5])
+def test_n_bins_per_feature(max_bins, diff):
+    # Check that n_bins_per_feature is n_unique_values when
+    # n_unique_values <= max_bins, else max_bins.
+
+    n_unique_values = max_bins + diff
+    X = list(range(n_unique_values)) * 2
+    X = np.array(X).reshape(-1, 1)
+    mapper = BinMapper(max_bins=max_bins).fit(X)
+    assert np.all(mapper.n_bins_per_feature_ == min(max_bins, n_unique_values))
