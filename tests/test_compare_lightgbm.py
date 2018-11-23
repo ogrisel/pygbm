@@ -7,11 +7,13 @@ from pygbm.binning import BinMapper
 
 
 @pytest.mark.parametrize('seed', range(5))
+@pytest.mark.parametrize('min_samples_leaf', (1, 20))
 @pytest.mark.parametrize('n_samples, max_leaf_nodes', [
     (255, 4096),
     (1000, 8),
 ])
-def test_same_predictions_easy_target(seed, n_samples, max_leaf_nodes):
+def test_same_predictions_easy_target(seed, min_samples_leaf, n_samples,
+                                      max_leaf_nodes):
     # Make sure pygbm has the same predictions as LGBM for very easy targets.
     #
     # In particular when the size of the trees are bound and the number of
@@ -32,7 +34,6 @@ def test_same_predictions_easy_target(seed, n_samples, max_leaf_nodes):
 
     rng = np.random.RandomState(seed=seed)
     n_samples = n_samples
-    min_samples_leaf = 1  # XXX: changing this breaks the test
     max_iter = 1
 
     # data = linear target, 5 features, 3 irrelevant.

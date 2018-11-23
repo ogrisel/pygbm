@@ -400,6 +400,17 @@ def _find_best_bin_to_split_helper(context, feature_idx, histogram, n_samples):
     for bin_idx in range(context.n_bins):
         n_samples_left += histogram[bin_idx]['count']
         n_samples_right = n_samples - n_samples_left
+
+        if context.constant_hessian:
+            hessian_left += (histogram[bin_idx]['count']
+                             * context.constant_hessian_value)
+        else:
+            hessian_left += histogram[bin_idx]['sum_hessians']
+        hessian_right = context.sum_hessians - hessian_left
+
+        gradient_left += histogram[bin_idx]['sum_gradients']
+        gradient_right = context.sum_gradients - gradient_left
+
         if context.min_samples_leaf is not None:
             if n_samples_left < context.min_samples_leaf:
                 continue
@@ -407,20 +418,12 @@ def _find_best_bin_to_split_helper(context, feature_idx, histogram, n_samples):
                 # won't get any better
                 break
 
-        if context.constant_hessian:
-            hessian_left += (histogram[bin_idx]['count']
-                             * context.constant_hessian_value)
-        else:
-            hessian_left += histogram[bin_idx]['sum_hessians']
         if hessian_left < context.min_hessian_to_split:
             continue
-        hessian_right = context.sum_hessians - hessian_left
         if hessian_right < context.min_hessian_to_split:
-            # won't get any better
+            # won't get any better (hessians are > 0 since loss is convex)
             break
 
-        gradient_left += histogram[bin_idx]['sum_gradients']
-        gradient_right = context.sum_gradients - gradient_left
         gain = _split_gain(gradient_left, hessian_left,
                            gradient_right, hessian_right,
                            context.sum_gradients, context.sum_hessians,
