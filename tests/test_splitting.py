@@ -15,7 +15,7 @@ def test_histogram_split(n_bins):
     feature_idx = 0
     l2_regularization = 0
     min_hessian_to_split = 1e-3
-    min_samples_leaf = None
+    min_samples_leaf = 1
     min_gain_to_split = 0.
     binned_features = np.asfortranarray(
         rng.randint(0, n_bins, size=(int(1e4), 2)), dtype=np.uint8)
@@ -67,7 +67,7 @@ def test_split_vs_split_subtraction(constant_hessian):
     n_samples = 500
     l2_regularization = 0.
     min_hessian_to_split = 1e-3
-    min_samples_leaf = None
+    min_samples_leaf = 1
     min_gain_to_split = 0.
 
     binned_features = rng.randint(0, n_bins, size=(n_samples, n_features),
@@ -147,7 +147,7 @@ def test_gradient_and_hessian_sanity(constant_hessian):
     n_samples = 500
     l2_regularization = 0.
     min_hessian_to_split = 1e-3
-    min_samples_leaf = 1e-3
+    min_samples_leaf = 1
     min_gain_to_split = 0.
 
     binned_features = rng.randint(0, n_bins, size=(n_samples, n_features),
@@ -238,7 +238,7 @@ def test_split_indices():
     n_samples = 10
     l2_regularization = 0.
     min_hessian_to_split = 1e-3
-    min_samples_leaf = None
+    min_samples_leaf = 1
     min_gain_to_split = 0.
 
     # split will happen on feature 1 and on bin 3

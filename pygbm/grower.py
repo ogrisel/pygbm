@@ -68,6 +68,9 @@ class TreeGrower:
         if max_depth is not None and max_depth < 1:
             raise ValueError(f'max_depth={max_depth} should not be'
                              f' smaller than 1')
+        if min_samples_leaf < 1:
+            raise ValueError(f'min_samples_leaf={min_samples_leaf} should '
+                             f'not be smaller than 1')
         if not features_data.flags.f_contiguous:
             warnings.warn("Binned data should be passed as Fortran contiguous"
                           "array for maximum efficiency.")
@@ -121,8 +124,7 @@ class TreeGrower:
         if (self.max_leaf_nodes is not None and self.max_leaf_nodes == 1):
             self._finalize_leaf(self.root)
             return
-        if (self.min_samples_leaf is not None
-                and self.root.n_samples < 2 * self.min_samples_leaf):
+        if self.root.n_samples < 2 * self.min_samples_leaf:
             # Do not even bother computing any splitting statistics.
             self._finalize_leaf(self.root)
             return
@@ -230,14 +232,12 @@ class TreeGrower:
             self._finalize_splittable_nodes()
             return left_child_node, right_child_node
 
-        if (self.min_samples_leaf is not None
-                and left_child_node.n_samples < self.min_samples_leaf * 2):
+        if left_child_node.n_samples < self.min_samples_leaf * 2:
             self._finalize_leaf(left_child_node)
         else:
             self._compute_spittability(left_child_node)
 
-        if (self.min_samples_leaf is not None
-                and right_child_node.n_samples < self.min_samples_leaf * 2):
+        if right_child_node.n_samples < self.min_samples_leaf * 2:
             self._finalize_leaf(right_child_node)
         else:
             self._compute_spittability(right_child_node)

@@ -1,6 +1,6 @@
 # from collections import namedtuple
 import numpy as np
-from numba import njit, jitclass, prange, float32, uint8, uint32, optional
+from numba import njit, jitclass, prange, float32, uint8, uint32
 import numba
 from .histogram import _build_histogram
 from .histogram import _subtract_histograms
@@ -42,7 +42,7 @@ class SplitInfo:
     ('binned_features', uint8[::1, :]),
     ('max_bins', uint32),
     ('n_bins_per_feature', uint32[::1]),
-    ('min_samples_leaf', optional(uint32)),
+    ('min_samples_leaf', uint32),
     ('min_gain_to_split', float32),
     ('all_gradients', float32[::1]),
     ('all_hessians', float32[::1]),
@@ -62,7 +62,7 @@ class SplittingContext:
     def __init__(self, n_features, binned_features, max_bins,
                  n_bins_per_feature, all_gradients, all_hessians,
                  l2_regularization, min_hessian_to_split=1e-3,
-                 min_samples_leaf=None, min_gain_to_split=0.):
+                 min_samples_leaf=20, min_gain_to_split=0.):
         self.n_features = n_features
         self.binned_features = binned_features
         # Note: all histograms will have <max_bins> bins, but some of the
@@ -415,12 +415,11 @@ def _find_best_bin_to_split_helper(context, feature_idx, histogram, n_samples):
         gradient_left += histogram[bin_idx]['sum_gradients']
         gradient_right = context.sum_gradients - gradient_left
 
-        if context.min_samples_leaf is not None:
-            if n_samples_left < context.min_samples_leaf:
-                continue
-            if n_samples_right < context.min_samples_leaf:
-                # won't get any better
-                break
+        if n_samples_left < context.min_samples_leaf:
+            continue
+        if n_samples_right < context.min_samples_leaf:
+            # won't get any better
+            break
 
         if hessian_left < context.min_hessian_to_split:
             continue
