@@ -9,8 +9,7 @@ from pygbm.binning import BinMapper
 from pygbm.grower import TreeGrower
 
 
-# XXX: fails for anything other than 255 bins
-@pytest.mark.parametrize('max_bins', [255])
+@pytest.mark.parametrize('max_bins', [200, 256])
 def test_boston_dataset(max_bins):
     boston = load_boston()
     X_train, X_test, y_train, y_test = train_test_split(
@@ -33,8 +32,8 @@ def test_boston_dataset(max_bins):
 
     predictor = grower.make_predictor(bin_thresholds=mapper.bin_thresholds_)
 
-    assert r2_score(y_train, predictor.predict_binned(X_train_binned)) > 0.75
-    assert r2_score(y_test, predictor.predict_binned(X_test_binned)) > 0.65
+    assert r2_score(y_train, predictor.predict_binned(X_train_binned)) > 0.85
+    assert r2_score(y_test, predictor.predict_binned(X_test_binned)) > 0.70
 
     assert_allclose(predictor.predict(X_train),
                     predictor.predict_binned(X_train_binned))
@@ -42,5 +41,5 @@ def test_boston_dataset(max_bins):
     assert_allclose(predictor.predict(X_test),
                     predictor.predict_binned(X_test_binned))
 
-    assert r2_score(y_train, predictor.predict(X_train)) > 0.75
-    assert r2_score(y_test, predictor.predict(X_test)) > 0.65
+    assert r2_score(y_train, predictor.predict(X_train)) > 0.85
+    assert r2_score(y_test, predictor.predict(X_test)) > 0.70
