@@ -158,7 +158,10 @@ def split_indices(context, split_info, sample_indices):
     # Note: we could probably allocate all the arrays of size n_threads in the
     # splitting context as well, but gains are probably going to be minimal
     sizes = np.full(n_threads, n_samples // n_threads, dtype=np.int32)
-    sizes[:n_samples % n_threads] += 1
+    if n_samples % n_threads > 0:
+        # array[:0] will cause a bug in numba 0.41 so we need the if. Remove
+        # once issue numba 3554 is fixed.
+        sizes[:n_samples % n_threads] += 1
     offset_in_buffers = np.zeros(n_threads, dtype=np.int32)
     offset_in_buffers[1:] = np.cumsum(sizes[:-1])
 
@@ -243,7 +246,10 @@ def find_node_split(context, sample_indices):
         # Each threads writes data in ordered_xx from starts[thread_idx] to
         # starts[thread_idx] + sizes[thread_idx]
         sizes = np.full(n_threads, n_samples // n_threads, dtype=np.int32)
-        sizes[:n_samples % n_threads] += 1
+        if n_samples % n_threads > 0:
+            # array[:0] will cause a bug in numba 0.41 so we need the if.
+            # Remove once issue numba 3554 is fixed.
+            sizes[:n_samples % n_threads] += 1
         starts = np.zeros(n_threads, dtype=np.int32)
         starts[1:] = np.cumsum(sizes[:-1])
         if ctx.constant_hessian:
