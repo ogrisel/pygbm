@@ -1,6 +1,6 @@
 from graphviz import Digraph
 
-from pygbm import GradientBoostingMachine
+from pygbm import BaseGradientBoostingMachine
 import pygbm
 
 
@@ -82,7 +82,7 @@ def plot_tree(est_or_grower, est_lightgbm=None, tree_index=0, view=True,
             if parent is not None:
                 graph.edge(parent, name, decision)
 
-        if isinstance(est_or_grower, GradientBoostingMachine):
+        if isinstance(est_or_grower, BaseGradientBoostingMachine):
             add_predictor_node(0)
         elif isinstance(est_or_grower, pygbm.grower.TreeGrower):
             add_grower_node(est_or_grower.root)

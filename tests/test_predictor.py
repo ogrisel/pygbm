@@ -19,7 +19,8 @@ def test_boston_dataset(max_bins):
     X_train_binned = mapper.fit_transform(X_train)
     X_test_binned = mapper.transform(X_test)
 
-    gradients = y_train.astype(np.float32)
+    # Init gradients and hessians to that of least squares loss
+    gradients = -y_train.astype(np.float32)
     hessians = np.ones(1, dtype=np.float32)
 
     min_samples_leaf = 8

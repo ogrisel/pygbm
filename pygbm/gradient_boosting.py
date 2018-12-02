@@ -1,23 +1,25 @@
+from abc import ABC, abstractmethod
+
 import numpy as np
 from numba import njit, prange
 from time import time
-from sklearn.base import BaseEstimator, RegressorMixin
+from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
 from sklearn.utils import check_X_y, check_random_state
 from sklearn.metrics import check_scoring
 from sklearn.model_selection import train_test_split
 
 from pygbm.binning import BinMapper
 from pygbm.grower import TreeGrower
+from pygbm.loss import _LOSSES
 
 
-class GradientBoostingMachine(BaseEstimator, RegressorMixin):
+class BaseGradientBoostingMachine(BaseEstimator, ABC):
 
-    def __init__(self, learning_rate=0.1, max_iter=100, max_leaf_nodes=31,
-                 max_depth=None, min_samples_leaf=20,
-                 l2_regularization=0., max_bins=256,
-                 max_no_improvement=5, validation_split=0.1,
-                 scoring='neg_mean_squared_error',
-                 tol=1e-7, verbose=0, random_state=None):
+    @abstractmethod
+    def __init__(self, loss, learning_rate, max_iter, max_leaf_nodes,
+                 max_depth, min_samples_leaf, l2_regularization, max_bins,
+                 max_no_improvement, validation_split, scoring, tol, verbose,
+                 random_state):
         self.learning_rate = learning_rate
         self.max_iter = max_iter
         self.max_leaf_nodes = max_leaf_nodes
@@ -31,6 +33,7 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
         self.tol = tol
         self.verbose = verbose
         self.random_state = random_state
+        self.loss = loss
 
     def fit(self, X, y):
         fit_start_time = time()
@@ -41,9 +44,19 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
         # TODO: add support for mixed-typed (numerical + categorical) data
         # TODO: add support for missing data
         # TODO: add support for pre-binned data (pass-through)?
+        # TODO: test input checking
         X, y = check_X_y(X, y, dtype=[np.float32, np.float64])
         y = y.astype(np.float32, copy=False)
         rng = check_random_state(self.random_state)
+        if self.loss not in _LOSSES:
+            raise ValueError("Invalid loss {}. Accepted losses are {}.".format(
+                self.loss, ', '.join(self._SUPPORTED_LOSS)))
+        if self.loss not in self._SUPPORTED_LOSS:
+            raise ValueError(
+                "Loss {} is not supported for {}. Accepted losses"
+                "are {}.".format(self.loss, self.__class__.__name__,
+                                 ', '.join(self._SUPPORTED_LOSS)))
+        self.loss_ = _LOSSES[self.loss]()
         if self.verbose:
             print(f"Binning {X.nbytes / 1e9:.3f} GB of data: ", end="",
                   flush=True)
@@ -78,10 +91,10 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
 
         if self.verbose:
             print("Fitting gradient boosted rounds:")
-        # TODO: plug custom loss functions
-        y_pred = np.zeros_like(y_train, dtype=np.float32)
-        gradients = np.asarray(y_train, dtype=np.float32).copy()
-        hessians = np.ones(1, dtype=np.float32)
+        # TODO: is the initial prediction always 0? What about classif?
+        y_pred = np.zeros_like(y_train)
+        gradients, hessians = self.loss_.init_gradients_and_hessians(
+            n_samples=y_train.shape[0])
         self.predictors_ = predictors = []
         self.train_scores_ = []
         if self.validation_split is not None:
@@ -98,6 +111,9 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
             if should_stop or self.n_iter_ == self.max_iter:
                 break
             shrinkage = 1. if self.n_iter_ == 0 else self.learning_rate
+            # Update gradients and hessians inplace
+            self.loss_.update_gradients_and_hessians(gradients, hessians,
+                                                     y_train, y_pred)
             grower = TreeGrower(
                 X_binned_train, gradients, hessians, max_bins=self.max_bins,
                 n_bins_per_feature=self.bin_mapper_.n_bins_per_feature_,
@@ -109,10 +125,10 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
             predictors.append(predictor)
             self.n_iter_ += 1
             tic_pred = time()
+            # prepare leaves_data so that _update_y_pred can be @njitted
             leaves_data = [(l.value, l.sample_indices)
                            for l in grower.finalized_leaves]
             _update_y_pred(leaves_data, y_pred)
-            gradients = y_train - y_pred
             toc_pred = time()
             acc_prediction_time += toc_pred - tic_pred
 
@@ -134,14 +150,15 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
             self.validation_scores_ = np.asarray(self.validation_scores_)
         return self
 
-    def predict(self, X):
+    def _raw_predict(self, X):
+        """Return the sum of the leaves values"""
         # TODO: check input / check_fitted
         # TODO: make predictor behave correctly on pre-binned data
-        # TODO: handle classification and output class labels in this case
-        predicted = np.zeros(X.shape[0], dtype=np.float32)
+        raw_predictions = np.zeros(X.shape[0], dtype=np.float32)
         for predictor in self.predictors_:
-            predicted += predictor.predict(X)
-        return predicted
+            raw_predictions += predictor.predict(X)
+
+        return raw_predictions
 
     def _predict_binned(self, X_binned):
         predicted = np.zeros(X_binned.shape[0], dtype=np.float32)
@@ -196,8 +213,53 @@ class GradientBoostingMachine(BaseEstimator, RegressorMixin):
         return candidate >= best_with_tol
 
 
-# TODO: shall we split between GBMClassifier and GBMRegressor instead
-# of using a single class?
+class GradientBoostingRegressor(BaseGradientBoostingMachine, RegressorMixin):
+
+    _SUPPORTED_LOSS = ('least_squares',)
+
+    def __init__(self, loss='least_squares', learning_rate=0.1, max_iter=100,
+                 max_leaf_nodes=31, max_depth=None, min_samples_leaf=20,
+                 l2_regularization=0., max_bins=256, max_no_improvement=5,
+                 validation_split=0.1, scoring='neg_mean_squared_error',
+                 tol=1e-7, verbose=0, random_state=None):
+        super(GradientBoostingRegressor, self).__init__(
+            loss=loss, learning_rate=learning_rate, max_iter=max_iter,
+            max_leaf_nodes=max_leaf_nodes, max_depth=max_depth,
+            min_samples_leaf=min_samples_leaf,
+            l2_regularization=l2_regularization, max_bins=max_bins,
+            max_no_improvement=max_no_improvement,
+            validation_split=validation_split, scoring=scoring, tol=tol,
+            verbose=verbose, random_state=random_state)
+
+    def predict(self, X):
+        return self._raw_predict(X)
+
+
+class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
+
+    _SUPPORTED_LOSS = ('binary_crossentropy',)
+
+    def __init__(self, loss='binary_crossentropy', learning_rate=0.1,
+                 max_iter=100, max_leaf_nodes=31, max_depth=None,
+                 min_samples_leaf=20, l2_regularization=0., max_bins=256,
+                 max_no_improvement=5, validation_split=0.1,
+                 scoring='neg_mean_squared_error', tol=1e-7, verbose=0,
+                 random_state=None):
+        super(GradientBoostingClassifier, self).__init__(
+            loss=loss, learning_rate=learning_rate, max_iter=max_iter,
+            max_leaf_nodes=max_leaf_nodes, max_depth=max_depth,
+            min_samples_leaf=min_samples_leaf,
+            l2_regularization=l2_regularization, max_bins=max_bins,
+            max_no_improvement=max_no_improvement,
+            validation_split=validation_split, scoring=scoring, tol=tol,
+            verbose=verbose, random_state=random_state)
+
+    def predict(self, X):
+        return np.argmax(self.predict_proba(X), axis=1)
+
+    def predict_proba(self, X):
+        raw_predictions = self._raw_predict(X)
+        return self.loss_.predict_proba(raw_predictions)
 
 
 @njit(parallel=True)

@@ -7,12 +7,10 @@ import argparse
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import accuracy_score, roc_auc_score
 from joblib import Memory
-from pygbm import GradientBoostingMachine
-# from lightgbm import LGBMClassifier
-# for now as pygbm does not have classifier loss yet:
-from lightgbm import LGBMRegressor
+from pygbm import GradientBoostingClassifier
+from lightgbm import LGBMClassifier
 import numba
 
 
@@ -69,38 +67,43 @@ print(f"Training set with {n_samples} records with {n_features} features.")
 if not args.no_lightgbm:
     print("Fitting a LightGBM model...")
     tic = time()
-    lightgbm_model = LGBMRegressor(n_estimators=n_trees,
-                                   num_leaves=n_leaf_nodes,
-                                   learning_rate=lr, verbose=10)
+    lightgbm_model = LGBMClassifier(objective='binary',
+                                    n_estimators=n_trees,
+                                    num_leaves=n_leaf_nodes,
+                                    learning_rate=lr, verbose=10,
+                                    min_data_in_bin=1)
     lightgbm_model.fit(data_train, target_train)
     toc = time()
     predicted_test = lightgbm_model.predict(data_test)
     roc_auc = roc_auc_score(target_test, predicted_test)
-    print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.4f}")
+    acc = accuracy_score(target_test, predicted_test)
+    print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.4f}, ACC: {acc :.4f}")
 
 print("JIT compiling code for the pygbm model...")
 tic = time()
-pygbm_model = GradientBoostingMachine(learning_rate=lr, max_iter=1,
-                                      max_bins=max_bins,
-                                      max_leaf_nodes=n_leaf_nodes,
-                                      random_state=0, scoring=None,
-                                      verbose=0, validation_split=None)
+pygbm_model = GradientBoostingClassifier(learning_rate=lr, max_iter=1,
+                                         max_bins=max_bins,
+                                         max_leaf_nodes=n_leaf_nodes,
+                                         random_state=0, scoring=None,
+                                         verbose=0, validation_split=None)
 pygbm_model.fit(data_train[:100], target_train[:100])
+pygbm_model.predict(data_train[:100])  # prediction code is also jitted
 toc = time()
 print(f"done in {toc - tic:.3f}s")
 
 print("Fitting a pygbm model...")
 tic = time()
-pygbm_model = GradientBoostingMachine(learning_rate=lr, max_iter=n_trees,
-                                      max_bins=max_bins,
-                                      max_leaf_nodes=n_leaf_nodes,
-                                      random_state=0, scoring=None,
-                                      verbose=1, validation_split=None)
+pygbm_model = GradientBoostingClassifier(learning_rate=lr, max_iter=n_trees,
+                                         max_bins=max_bins,
+                                         max_leaf_nodes=n_leaf_nodes,
+                                         random_state=0, scoring=None,
+                                         verbose=1, validation_split=None)
 pygbm_model.fit(data_train, target_train)
 toc = time()
 predicted_test = pygbm_model.predict(data_test)
 roc_auc = roc_auc_score(target_test, predicted_test)
-print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.4f}")
+acc = accuracy_score(target_test, predicted_test)
+print(f"done in {toc - tic:.3f}s, ROC AUC: {roc_auc:.4f}, ACC: {acc :.4f}")
 
 if hasattr(numba, 'threading_layer'):
     print("Threading layer chosen: %s" % numba.threading_layer())

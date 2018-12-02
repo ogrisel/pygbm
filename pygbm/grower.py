@@ -254,7 +254,7 @@ class TreeGrower:
         XGBoost: A Scalable Tree Boosting System, T. Chen, C. Guestrin, 2016
         https://arxiv.org/abs/1603.02754
         """
-        node.value = self.shrinkage * node.sum_gradients / (
+        node.value = -self.shrinkage * node.sum_gradients / (
             node.sum_hessians + self.splitting_context.l2_regularization)
         self.finalized_leaves.append(node)
 

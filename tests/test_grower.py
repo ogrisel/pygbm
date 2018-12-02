@@ -137,9 +137,9 @@ def test_grow_tree(n_bins, constant_hessian, stopping_param, shrinkage):
     assert not grower.can_split_further()
 
     # Check the values of the leaves:
-    assert grower.root.left_child.value == approx(-shrinkage)
-    assert grower.root.right_child.left_child.value == approx(-shrinkage)
-    assert grower.root.right_child.right_child.value == approx(shrinkage)
+    assert grower.root.left_child.value == approx(shrinkage)
+    assert grower.root.right_child.left_child.value == approx(shrinkage)
+    assert grower.root.right_child.right_child.value == approx(-shrinkage)
 
 
 def test_predictor_from_grower():
@@ -159,9 +159,6 @@ def test_predictor_from_grower():
     assert predictor.nodes.shape[0] == 5
     assert predictor.nodes['is_leaf'].sum() == 3
 
-    def predict(features):
-        return predictor.predict_one_binned(np.array(features, dtype=np.uint8))
-
     # Probe some predictions for each leaf of the tree
     input_data = np.array([
         [0, 0],
@@ -177,12 +174,12 @@ def test_predictor_from_grower():
         [242, 100],
     ], dtype=np.uint8)
     predictions = predictor.predict_binned(input_data)
-    expected_targets = [-1, -1, -1, -1, -1, -1, 1, 1, 1]
+    expected_targets = [1, 1, 1, 1, 1, 1, -1, -1, -1]
     assert_array_almost_equal(predictions, expected_targets, decimal=5)
 
     # Check that training set can be recovered exactly:
     predictions = predictor.predict_binned(features_data)
-    assert_array_almost_equal(predictions, all_gradients, decimal=5)
+    assert_array_almost_equal(predictions, -all_gradients, decimal=5)
 
 
 @pytest.mark.parametrize(
