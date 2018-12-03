@@ -63,6 +63,7 @@ class SplittingContext:
                  n_bins_per_feature, all_gradients, all_hessians,
                  l2_regularization, min_hessian_to_split=1e-3,
                  min_samples_leaf=20, min_gain_to_split=0.):
+
         self.n_features = n_features
         self.binned_features = binned_features
         # Note: all histograms will have <max_bins> bins, but some of the

@@ -1,8 +1,8 @@
 import numpy as np
-
 from numpy.testing import assert_array_almost_equal
 import pytest
 from pytest import approx
+from sklearn.utils.testing import assert_raises_regex
 
 from pygbm.grower import TreeGrower
 from pygbm.binning import BinMapper
@@ -255,3 +255,36 @@ def test_min_samples_leaf_root(n_samples, min_samples_leaf):
         assert len(grower.finalized_leaves) >= 2
     else:
         assert len(grower.finalized_leaves) == 1
+
+
+def test_init_parameters_validation():
+
+    features_data, all_gradients, all_hessians = _make_training_data()
+
+    features_data_float = features_data.astype(np.float32)
+    assert_raises_regex(
+        NotImplementedError,
+        "Explicit feature binning required for now",
+        TreeGrower, features_data_float, all_gradients, all_hessians
+    )
+
+    features_data_C_array = np.ascontiguousarray(features_data)
+    assert_raises_regex(
+        ValueError,
+        "Binned data should be passed as Fortran contiguous array",
+        TreeGrower, features_data_C_array, all_gradients, all_hessians
+    )
+
+    assert_raises_regex(
+        ValueError,
+        "min_gain_to_split=-1 must be positive",
+        TreeGrower, features_data, all_gradients, all_hessians,
+        min_gain_to_split=-1
+    )
+
+    assert_raises_regex(
+        ValueError,
+        "min_hessian_to_split=-1 must be positive",
+        TreeGrower, features_data, all_gradients, all_hessians,
+        min_hessian_to_split=-1
+    )

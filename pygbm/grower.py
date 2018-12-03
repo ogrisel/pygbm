@@ -1,4 +1,3 @@
-import warnings
 from heapq import heappush, heappop
 import numpy as np
 from time import time
@@ -59,21 +58,10 @@ class TreeGrower:
                  min_gain_to_split=0., max_bins=256, n_bins_per_feature=None,
                  l2_regularization=0., min_hessian_to_split=1e-3,
                  shrinkage=1.):
-        if features_data.dtype != np.uint8:
-            raise NotImplementedError(
-                "Explicit feature binning required for now")
-        if max_leaf_nodes is not None and max_leaf_nodes < 1:
-            raise ValueError(f'max_leaf_nodes={max_leaf_nodes} should not be'
-                             f' smaller than 1')
-        if max_depth is not None and max_depth < 1:
-            raise ValueError(f'max_depth={max_depth} should not be'
-                             f' smaller than 1')
-        if min_samples_leaf < 1:
-            raise ValueError(f'min_samples_leaf={min_samples_leaf} should '
-                             f'not be smaller than 1')
-        if not features_data.flags.f_contiguous:
-            warnings.warn("Binned data should be passed as Fortran contiguous"
-                          "array for maximum efficiency.")
+
+        self._validate_parameters(features_data, max_leaf_nodes, max_depth,
+                                  min_samples_leaf, min_gain_to_split,
+                                  l2_regularization, min_hessian_to_split)
 
         if n_bins_per_feature is None:
             n_bins_per_feature = max_bins
@@ -92,9 +80,6 @@ class TreeGrower:
         self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf
         self.features_data = features_data
-        if min_gain_to_split < 0:
-            raise ValueError(f"min_gain_to_split should be positive, got: "
-                             f"{min_gain_to_split}")
         self.min_gain_to_split = min_gain_to_split
         self.shrinkage = shrinkage
         self.splittable_nodes = []
@@ -103,6 +88,35 @@ class TreeGrower:
         self.total_apply_split_time = 0.  # time spent splitting nodes
         self._intilialize_root()
         self.n_nodes = 1
+
+    def _validate_parameters(self, features_data, max_leaf_nodes, max_depth,
+                             min_samples_leaf, min_gain_to_split,
+                             l2_regularization, min_hessian_to_split):
+        if features_data.dtype != np.uint8:
+            raise NotImplementedError(
+                "Explicit feature binning required for now")
+        if not features_data.flags.f_contiguous:
+            raise ValueError(
+                "Binned data should be passed as Fortran contiguous "
+                "array for maximum efficiency.")
+        if max_leaf_nodes is not None and max_leaf_nodes < 1:
+            raise ValueError(f'max_leaf_nodes={max_leaf_nodes} should not be'
+                             f' smaller than 1')
+        if max_depth is not None and max_depth < 1:
+            raise ValueError(f'max_depth={max_depth} should not be'
+                             f' smaller than 1')
+        if min_samples_leaf < 1:
+            raise ValueError(f'min_samples_leaf={min_samples_leaf} should '
+                             f'not be smaller than 1')
+        if min_gain_to_split < 0:
+            raise ValueError(f'min_gain_to_split={min_gain_to_split} '
+                             f'must be positive.')
+        if l2_regularization < 0:
+            raise ValueError(f'l2_regularization={l2_regularization} must be '
+                             f'positive.')
+        if min_hessian_to_split < 0:
+            raise ValueError(f'min_hessian_to_split={min_hessian_to_split} '
+                             f'must be positive.')
 
     def grow(self):
         while self.can_split_further():

@@ -4,7 +4,7 @@ from sklearn.utils import check_random_state, check_array
 from sklearn.base import BaseEstimator, TransformerMixin
 
 
-def find_binning_thresholds(data, max_bins=255, subsample=int(2e5),
+def find_binning_thresholds(data, max_bins=256, subsample=int(2e5),
                             random_state=None):
     """Extract feature-wise equally-spaced quantiles from numerical data
 
@@ -35,8 +35,9 @@ def find_binning_thresholds(data, max_bins=255, subsample=int(2e5),
         Each array has size (n_bins - 1) where:
             n_bins == min(max_bins, len(np.unique(data[:, feature_idx])))
     """
-    if max_bins > 256:
-        raise ValueError(f'max_bins should no larger than 256, got {max_bins}')
+    if not (2 <= max_bins <= 256):
+        raise ValueError(f'max_bins={max_bins} should be no smaller than 2 '
+                         f'and no larger than 256.')
     rng = check_random_state(random_state)
     if data.shape[0] > subsample:
         subset = rng.choice(np.arange(data.shape[0]), subsample)

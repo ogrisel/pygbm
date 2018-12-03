@@ -20,6 +20,7 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
                  max_depth, min_samples_leaf, l2_regularization, max_bins,
                  max_no_improvement, validation_split, scoring, tol, verbose,
                  random_state):
+        self.loss = loss
         self.learning_rate = learning_rate
         self.max_iter = max_iter
         self.max_leaf_nodes = max_leaf_nodes
@@ -33,9 +34,37 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         self.tol = tol
         self.verbose = verbose
         self.random_state = random_state
-        self.loss = loss
+
+    def _validate_parameters(self):
+
+        if self.loss not in _LOSSES:
+            raise ValueError("Invalid loss {}. Accepted losses are {}.".format(
+                self.loss, ', '.join(self._VALID_LOSSES)))
+        if self.loss not in self._VALID_LOSSES:
+            raise ValueError(
+                "Loss {} is not supported for {}. Accepted losses"
+                "are {}.".format(self.loss, self.__class__.__name__,
+                                 ', '.join(self._VALID_LOSSES)))
+        self.loss_ = _LOSSES[self.loss]()
+
+        if self.learning_rate <= 0:
+            raise ValueError(f'learning_rate={self.learning_rate} must '
+                             f'be strictly positive')
+        if self.max_iter < 1:
+            raise ValueError(f'max_iter={self.max_iter} must '
+                             f'not be smaller than 1.')
+        if self.max_no_improvement < 1:
+            raise ValueError(f'max_no_improvement={self.max_no_improvement} '
+                             f'must not be smaller than 1.')
+        if self.validation_split is not None and self.validation_split <= 0:
+            raise ValueError(f'validation_split={self.validation_split} '
+                             f'must be strictly positive, or None.')
+        if self.tol <= 0:
+            raise ValueError(f'tol={self.tol} '
+                             f'must be strictly positive.')
 
     def fit(self, X, y):
+
         fit_start_time = time()
         acc_find_split_time = 0.  # time spent finding the best splits
         acc_apply_split_time = 0.  # time spent splitting nodes
@@ -48,15 +77,9 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         X, y = check_X_y(X, y, dtype=[np.float32, np.float64])
         y = y.astype(np.float32, copy=False)
         rng = check_random_state(self.random_state)
-        if self.loss not in _LOSSES:
-            raise ValueError("Invalid loss {}. Accepted losses are {}.".format(
-                self.loss, ', '.join(self._SUPPORTED_LOSS)))
-        if self.loss not in self._SUPPORTED_LOSS:
-            raise ValueError(
-                "Loss {} is not supported for {}. Accepted losses"
-                "are {}.".format(self.loss, self.__class__.__name__,
-                                 ', '.join(self._SUPPORTED_LOSS)))
-        self.loss_ = _LOSSES[self.loss]()
+
+        self._validate_parameters()
+
         if self.verbose:
             print(f"Binning {X.nbytes / 1e9:.3f} GB of data: ", end="",
                   flush=True)
@@ -68,10 +91,14 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
             duration = toc - tic
             troughput = X.nbytes / duration
             print(f"{duration:.3f} s ({troughput / 1e6:.3f} MB/s)")
+
         if self.validation_split is not None:
+            # stratify for classification
+            stratify = y if hasattr(self.loss_, 'predict_proba') else None
+
             X_binned_train, X_binned_val, y_train, y_val = train_test_split(
-                X_binned, y, test_size=self.validation_split, stratify=y,
-                random_state=rng)
+                X_binned, y, test_size=self.validation_split,
+                stratify=stratify, random_state=rng)
             # Histogram computation is faster on feature-aligned data.
             X_binned_train = np.asfortranarray(X_binned_train)
         else:
@@ -91,6 +118,7 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
 
         if self.verbose:
             print("Fitting gradient boosted rounds:")
+
         # TODO: is the initial prediction always 0? What about classif?
         y_pred = np.zeros_like(y_train)
         gradients, hessians = self.loss_.init_gradients_and_hessians(
@@ -118,7 +146,9 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
                 X_binned_train, gradients, hessians, max_bins=self.max_bins,
                 n_bins_per_feature=self.bin_mapper_.n_bins_per_feature_,
                 max_leaf_nodes=self.max_leaf_nodes, max_depth=self.max_depth,
-                min_samples_leaf=self.min_samples_leaf, shrinkage=shrinkage)
+                min_samples_leaf=self.min_samples_leaf,
+                l2_regularization=self.l2_regularization,
+                shrinkage=shrinkage)
             grower.grow()
             predictor = grower.make_predictor(
                 bin_thresholds=self.bin_mapper_.bin_thresholds_)
@@ -215,7 +245,7 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
 
 class GradientBoostingRegressor(BaseGradientBoostingMachine, RegressorMixin):
 
-    _SUPPORTED_LOSS = ('least_squares',)
+    _VALID_LOSSES = ('least_squares',)
 
     def __init__(self, loss='least_squares', learning_rate=0.1, max_iter=100,
                  max_leaf_nodes=31, max_depth=None, min_samples_leaf=20,
@@ -237,7 +267,7 @@ class GradientBoostingRegressor(BaseGradientBoostingMachine, RegressorMixin):
 
 class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
 
-    _SUPPORTED_LOSS = ('binary_crossentropy',)
+    _VALID_LOSSES = ('binary_crossentropy',)
 
     def __init__(self, loss='binary_crossentropy', learning_rate=0.1,
                  max_iter=100, max_leaf_nodes=31, max_depth=None,

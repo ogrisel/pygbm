@@ -39,7 +39,7 @@ def test_find_binning_thresholds_random_data():
     bin_thresholds = find_binning_thresholds(DATA, random_state=0)
     assert len(bin_thresholds) == 2
     for i in range(len(bin_thresholds)):
-        assert bin_thresholds[i].shape == (254,)  # 255 - 1
+        assert bin_thresholds[i].shape == (255,)  # 256 - 1
         assert bin_thresholds[i].dtype == DATA.dtype
 
     assert_allclose(bin_thresholds[0][[64, 128, 192]],
@@ -138,7 +138,7 @@ def test_bin_mapper_identity_repeated_values(n_bins, n_distinct, multiplier):
     assert_array_equal(data, binned)
 
 
-@pytest.mark.parametrize('n_distinct', [1, 2, 7, 42])
+@pytest.mark.parametrize('n_distinct', [2, 7, 42])
 def test_bin_mapper_repeated_values_invariance(n_distinct):
     rng = np.random.RandomState(42)
     distinct_values = rng.normal(size=n_distinct)
@@ -175,7 +175,7 @@ def test_bin_mapper_identity_small(n_bins, scale, offset):
 
 
 @pytest.mark.parametrize('n_bins_small, n_bins_large', [
-    (1, 1),
+    (2, 2),
     (3, 3),
     (4, 4),
     (42, 42),
