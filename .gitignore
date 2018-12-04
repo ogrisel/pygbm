@@ -18,6 +18,9 @@ perf.data*
 # Benchmark data
 *.gz
 
+# doc
+doc/build
+
 # Extra files
 /build
 /dist

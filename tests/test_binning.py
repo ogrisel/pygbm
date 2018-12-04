@@ -2,7 +2,7 @@ import numpy as np
 from numpy.testing import assert_array_equal, assert_allclose
 import pytest
 
-from pygbm.binning import BinMapper, find_binning_thresholds, map_to_bins
+from pygbm.binning import BinMapper, find_binning_thresholds, _map_to_bins
 
 
 DATA = np.random.RandomState(42).normal(
@@ -67,7 +67,7 @@ def test_find_binning_thresholds_invalid_n_bins():
 def test_map_to_bins(n_bins):
     bin_thresholds = find_binning_thresholds(DATA, max_bins=n_bins,
                                              random_state=0)
-    binned = map_to_bins(DATA, bin_thresholds)
+    binned = _map_to_bins(DATA, bin_thresholds)
     assert binned.shape == DATA.shape
     assert binned.dtype == np.uint8
     assert binned.flags.f_contiguous

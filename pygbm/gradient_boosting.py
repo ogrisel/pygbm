@@ -1,3 +1,6 @@
+"""
+Gradient Boosting decision trees for classification and regression.
+"""
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -14,6 +17,7 @@ from pygbm.loss import _LOSSES
 
 
 class BaseGradientBoostingMachine(BaseEstimator, ABC):
+    """Base class for gradient boosting estimators."""
 
     @abstractmethod
     def __init__(self, loss, learning_rate, max_iter, max_leaf_nodes,
@@ -36,6 +40,10 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         self.random_state = random_state
 
     def _validate_parameters(self):
+        """Validate parameters passed to __init__.
+
+        The parameters that are directly passed to the grower are checked in
+        TreeGrower."""
 
         if self.loss not in _LOSSES:
             raise ValueError("Invalid loss {}. Accepted losses are {}.".format(
@@ -64,6 +72,20 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
                              f'must be strictly positive.')
 
     def fit(self, X, y):
+        """Fit the gradient boosting model.
+
+        Parameters
+        ----------
+        X : array-like, shape=(n_samples, n_features)
+            The input samples.
+
+        y : array-like, shape=(n_samples,)
+            Target values.
+
+        Returns
+        -------
+        self : object
+        """
 
         fit_start_time = time()
         acc_find_split_time = 0.  # time spent finding the best splits
@@ -181,7 +203,18 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         return self
 
     def _raw_predict(self, X):
-        """Return the sum of the leaves values"""
+        """Return the sum of the leaves values over all predictors.
+
+        Parameters
+        ----------
+        X : array-like, shape=(n_samples, n_features)
+            The input samples.
+
+        Returns
+        -------
+        y : array, shape (n_samples * n_trees_per_iteration,)
+            The raw predicted values.
+        """
         # TODO: check input / check_fitted
         # TODO: make predictor behave correctly on pre-binned data
         raw_predictions = np.zeros(X.shape[0], dtype=np.float32)
@@ -191,6 +224,21 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         return raw_predictions
 
     def _predict_binned(self, X_binned):
+        """Predict values or classes for binned data X.
+
+        TODO: This is incorrect now that we support classification right? This
+        should return classes, not the raw values from the leaves.
+
+        Parameters
+        ----------
+        X_binned : array-like, shape=(n_samples, n_features)
+            The binned input samples. Entries should be integers.
+
+        Returns
+        -------
+        y : array, shape (n_samples,)
+            The predicted values or classes.
+        """
         predicted = np.zeros(X_binned.shape[0], dtype=np.float32)
         for predictor in self.predictors_:
             predicted += predictor.predict_binned(X_binned)
@@ -244,6 +292,46 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
 
 
 class GradientBoostingRegressor(BaseGradientBoostingMachine, RegressorMixin):
+    """Scikit-learn compatible Gradient Boosting Tree for regression.
+
+    Parameters
+    ----------
+    loss : {'least_squares'}, optional(default='least_squares')
+        The loss function to use in the boosting process.
+    learning_rate : float, optional(default=TODO)
+        The learning rate, also known as *shrinkage*. This is used as a
+        multiplicative factor for the leaves values.
+    max_iter : int, optional(default=TODO)
+        The maximum number of iterations of the boosting process, i.e. the
+        maximum number of trees.
+    max_leaf_nodes : int, optional(default=TODO)
+        The maximum number of leaves for each tree.
+    max_depth : int, optional(default=TODO)
+        The maximum depth of each tree. The depth of a tree is the number of
+        nodes to go from the root to the deepest leaf.
+    min_samples_leaf : int, optional(default=TODO)
+        The minimum number of samples per leaf.
+    l2_regularization : float, optional(default=TODO)
+        The L2 regularization parameter.
+    max_bins : int, optional(default=256)
+        The maximum number of bins to use. Before training, each feature of
+        the input array ``X`` is binned into at most ``max_bins`` bins, which
+        allows for a much faster training stage. Features with a small
+        number of unique values may use less than ``max_bins`` bins. Must be no
+        larger than 256.
+    max_no_improvement : int, optional(default=TODO)
+        TODO
+    validation_split : int or float, optional(default=TODO)
+        TODO
+    scoring : str, optional(default=TODO)
+        TODO
+    verbose: int, optional(default=0)
+        The verbosity level. If not zero, print some information about the
+        fitting process.
+    random_state : int, np.random.RandomStateInstance or None, \
+        optional(default=None)
+        TODO: any chance we can link to sklearn glossary?
+    """
 
     _VALID_LOSSES = ('least_squares',)
 
@@ -262,10 +350,68 @@ class GradientBoostingRegressor(BaseGradientBoostingMachine, RegressorMixin):
             verbose=verbose, random_state=random_state)
 
     def predict(self, X):
+        """Predict values for X.
+
+        Parameters
+        ----------
+        X : array-like, shape=(n_samples, n_features)
+            The input samples.
+
+        Returns
+        -------
+        y : array, shape (n_samples,)
+            The predicted values.
+        """
         return self._raw_predict(X)
 
 
 class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
+    """Scikit-learn compatible Gradient Boosting Tree for classification.
+
+    Parameters
+    ----------
+    loss : {'auto', 'binary_crossentropy', 'categorical_crossentropy'}, \
+        optional(default='auto')
+        The loss function to use in the boosting process. 'binary_crossentropy'
+        (also known as logistic loss) is used for binary classification and
+        generalizes to 'categorical_crossentropy' for multiclass
+        classification. 'auto' will automatically choose eiher loss depending
+        on the nature of the problem.
+    learning_rate : float, optional(default=TODO)
+        The learning rate, also known as *shrinkage*. This is used as a
+        multiplicative factor for the leaves values.
+    max_iter : int, optional(default=TODO)
+        The maximum number of iterations of the boosting process, i.e. the
+        maximum number of trees for binary classification. For multiclass
+        classification, `n_classes` trees per iteration are built.
+    max_leaf_nodes : int, optional(default=TODO)
+        The maximum number of leaves for each tree.
+    max_depth : int, optional(default=TODO)
+        The maximum depth of each tree. The depth of a tree is the number of
+        nodes to go from the root to the deepest leaf.
+    min_samples_leaf : int, optional(default=TODO)
+        The minimum number of samples per leaf.
+    l2_regularization : float, optional(default=TODO)
+        The L2 regularization parameter.
+    max_bins : int, optional(default=256)
+        The maximum number of bins to use. Before training, each feature of
+        the input array ``X`` is binned into at most ``max_bins`` bins, which
+        allows for a much faster training stage. Features with a small
+        number of unique values may use less than ``max_bins`` bins. Must be no
+        larger than 256.
+    max_no_improvement : int, optional(default=TODO)
+        TODO
+    validation_split : int or float, optional(default=TODO)
+        TODO
+    scoring : str, optional(default=TODO)
+        TODO
+    verbose: int, optional(default=0)
+        The verbosity level. If not zero, print some information about the
+        fitting process.
+    random_state : int, np.random.RandomStateInstance or None, \
+        optional(default=None)
+        TODO: any chance we can link to sklearn glossary?
+    """
 
     _VALID_LOSSES = ('binary_crossentropy',)
 
@@ -285,16 +431,53 @@ class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
             verbose=verbose, random_state=random_state)
 
     def predict(self, X):
+        """Predict classes for X.
+
+        Parameters
+        ----------
+        X : array-like, shape=(n_samples, n_features)
+            The input samples.
+
+        Returns
+        -------
+        y : array, shape (n_samples,)
+            The predicted classes.
+        """
         return np.argmax(self.predict_proba(X), axis=1)
 
     def predict_proba(self, X):
+        """Predict class probabilities for X.
+
+        Parameters
+        ----------
+        X : array-like, shape=(n_samples, n_features)
+            The input samples.
+
+        Returns
+        -------
+        p : array, shape (n_samples, n_classes)
+            The class probabilities of the input samples.
+        """
         raw_predictions = self._raw_predict(X)
         return self.loss_.predict_proba(raw_predictions)
 
 
 @njit(parallel=True)
 def _update_y_pred(leaves_data, y_pred):
-    """Read prediction data on the training set from the grower leaves"""
+    """Update y_pred by reading the predictions of the ith tree directly
+    form the leaves.
+
+    Can only be used for predicting the training data. y_pred contains the
+    sum of the tree values from iteration 0 to i - 1. This adds the
+    predictions of the ith tree to y_pred.
+
+    Parameters
+    ----------
+    leaves_data: list of tuples (leaf.value, leaf.sample_indices)
+        The leaves data used to update y_pred.
+    y_pred : array-like, shape=(n_samples,)
+        The raw predictions for the training data.
+    """
     for leaf_idx in prange(len(leaves_data)):
         leaf_value, sample_indices = leaves_data[leaf_idx]
         for sample_idx in sample_indices:

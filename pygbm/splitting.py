@@ -22,6 +22,29 @@ from .histogram import HISTOGRAM_DTYPE
     ('n_samples_right', uint32),
 ])
 class SplitInfo:
+    """Pure data class to store information about a potential split.
+
+    Parameters
+    ----------
+    gain : float32
+        The gain of the split
+    feature_idx : int
+        The index of the feature to be split
+    bin_idx : int
+        The index of the bin on which the split is made
+    gradient_left : float32
+        The sum of the gradients of all the samples in the left child
+    hessian_left : float32
+        The sum of the hessians of all the samples in the left child
+    gradient_right : float32
+        The sum of the gradients of all the samples in the right child
+    hessian_right : float32
+        The sum of the hessians of all the samples in the right child
+    n_samples_left : int
+        The number of samples in the left child
+    n_samples_right : int
+        The number of samples in the right child
+    """
     def __init__(self, gain=-1., feature_idx=0, bin_idx=0,
                  gradient_left=0., hessian_left=0.,
                  gradient_right=0., hessian_right=0.,
@@ -59,6 +82,43 @@ class SplitInfo:
     ('right_indices_buffer', uint32[::1]),
 ])
 class SplittingContext:
+    """Pure data class defining a splitting context.
+
+    Ideally it would also have methods but numba does not support annotating
+    jitclasses (so we can't use parallel=True). This structure is
+    instanciated in the grower and stores all the required information to
+    compute the SplitInfo and histograms of each node.
+
+    Parameters
+    ----------
+    n_features : int
+        The number of features.
+    binned_features : array of int
+        The binned input samples. Must be Fortran-aligned.
+    max_bins : int, optional(default=256)
+        The maximum number of bins. Used to define the shape of the
+        histograms.
+    n_bins_per_feature : array-like of int
+        The actual number of bins needed for each feature, which is lower or
+        equal to max_bins.
+    gradients : array-like, shape=(n_samples,)
+        The gradients of each training sample. Those are the gradients of the
+        loss w.r.t the predictions, evaluated at iteration i - 1.
+    hessians : array-like, shape=(n_samples,)
+        The hessians of each training sample. Those are the hessians of the
+        loss w.r.t the predictions, evaluated at iteration i - 1.
+    l2_regularization : float
+        The L2 regularization parameter.
+    min_hessian_to_split : float
+        The minimum sum of hessians needed in each node. Splits that result in
+        at least one child having a sum of hessians less than
+        min_hessian_to_split are discarded.
+    min_samples_leaf : int
+        The minimum number of samples per leaf.
+    min_gain_to_split : float, optional(default=0.)
+        The minimum gain needed to split a node. Splits with lower gain will
+        be ignored.
+    """
     def __init__(self, n_features, binned_features, max_bins,
                  n_bins_per_feature, all_gradients, all_hessians,
                  l2_regularization, min_hessian_to_split=1e-3,
@@ -109,47 +169,68 @@ class SplittingContext:
 def split_indices(context, split_info, sample_indices):
     """Split samples into left and right arrays.
 
-    This is a multi-threaded implementation inspired by lightgbm.
-    Here is a quick break down. Let's suppose we want to split a node with
-    24 samples named from a to x. context.partition looks like this (the * are
-    indices in other leaves that we don't care about):
-    partition = [*************abcdefghijklmnopqrstuvwx****************]
-                              ^                       ^
-                        node_position     node_position + node.n_samples
+    Parameters
+    ----------
+    context : SplittingContext
+        The splitting context
+    split_ingo : SplitInfo
+        The SplitInfo of the node to split
+    sample_indices : array of int
+        The indices of the samples at the node to split. This is a view on
+        context.partition, and it is modified inplace by placing the indices
+        of the left child at the beginning, and the indices of the right child
+        at the end.
 
-    Ultimately, we want to reorder the samples inside the boundaries of the
-    leaf (which becomes a node) to now represent the samples in its left and
-    right child. For example:
-    partition = [*************abefilmnopqrtuxcdghjksvw*****************]
-                              ^              ^
-                      left_child_pos     right_child_pos
-    Note that left_child_pos always takes the value of node_position, and
-    right_child_pos = left_child_pos + left_child.n_samples. The order of the
-    samples inside a leaf is irrelevant.
-
-    1. samples_indices is a view on this region a..x. We conceptually
-       divide it into n_threads regions. Each thread will be responsible for
-       its own region. Here is an example with 4 threads:
-       samples_indices = [abcdef|ghijkl|mnopqr|stuvwx]
-    2. Each thread processes 6 = 24 // 4 entries and maps them into
-       left_indices_buffer or right_indices_buffer. For example, we could
-       have the following mapping ('.' denotes an undefined entry):
-       - left_indices_buffer =  [abef..|il....|mnopqr|tux...]
-       - right_indices_buffer = [cd....|ghjk..|......|svw...]
-    3. We keep track of the start positions of the regions (the '|') in
-       `offset_in_buffers` as well as the size of each region. We also keep
-       track of the number of samples put into the left/right child by each
-       thread. Concretely:
-       - left_counts =  [4, 2, 6, 3]
-       - right_counts = [2, 4, 0, 3]
-    4. Finally, we put left/right_indices_buffer back into the samples_indices,
-       without any undefined entries and the partition looks as expected
-       partition = [*************abefilmnopqrtuxcdghjksvw*****************]
-
-    Note: We here show left/right_indices_buffer as being the same size as
-    sample_indices for simplicity, but in reality they are of the same size as
-    partition.
+    Returns
+    -------
+    left_indices : array of int
+        The indices of the samples in the left child. This is a view on
+        context.partition.
+    right_indices : array of int
+        The indices of the samples in the right child. This is a view on
+        context.partition.
     """
+    # This is a multi-threaded implementation inspired by lightgbm.
+    # Here is a quick break down. Let's suppose we want to split a node with
+    # 24 samples named from a to x. context.partition looks like this (the *
+    # are indices in other leaves that we don't care about):
+    # partition = [*************abcdefghijklmnopqrstuvwx****************]
+    #                           ^                       ^
+    #                     node_position     node_position + node.n_samples
+
+    # Ultimately, we want to reorder the samples inside the boundaries of the
+    # leaf (which becomes a node) to now represent the samples in its left and
+    # right child. For example:
+    # partition = [*************abefilmnopqrtuxcdghjksvw*****************]
+    #                           ^              ^
+    #                   left_child_pos     right_child_pos
+    # Note that left_child_pos always takes the value of node_position, and
+    # right_child_pos = left_child_pos + left_child.n_samples. The order of
+    # the samples inside a leaf is irrelevant.
+
+    # 1. samples_indices is a view on this region a..x. We conceptually
+    #    divide it into n_threads regions. Each thread will be responsible for
+    #    its own region. Here is an example with 4 threads:
+    #    samples_indices = [abcdef|ghijkl|mnopqr|stuvwx]
+    # 2. Each thread processes 6 = 24 // 4 entries and maps them into
+    #    left_indices_buffer or right_indices_buffer. For example, we could
+    #    have the following mapping ('.' denotes an undefined entry):
+    #    - left_indices_buffer =  [abef..|il....|mnopqr|tux...]
+    #    - right_indices_buffer = [cd....|ghjk..|......|svw...]
+    # 3. We keep track of the start positions of the regions (the '|') in
+    #    ``offset_in_buffers`` as well as the size of each region. We also keep
+    #    track of the number of samples put into the left/right child by each
+    #    thread. Concretely:
+    #    - left_counts =  [4, 2, 6, 3]
+    #    - right_counts = [2, 4, 0, 3]
+    # 4. Finally, we put left/right_indices_buffer back into the
+    #    samples_indices, without any undefined entries and the partition looks
+    #    as expected
+    #    partition = [*************abefilmnopqrtuxcdghjksvw*****************]
+
+    # Note: We here show left/right_indices_buffer as being the same size as
+    # sample_indices for simplicity, but in reality they are of the same size
+    # as partition.
 
     binned_feature = context.binned_features.T[split_info.feature_idx]
 
@@ -220,14 +301,27 @@ def split_indices(context, split_info, sample_indices):
 
 @njit(parallel=True)
 def find_node_split(context, sample_indices):
-    """For each feature, find the best bin to split on by scanning data.
+    """For each feature, find the best bin to split on at a given node.
 
-    This is done by calling _find_histogram_split that compute histograms
-    for the samples that reached this node.
+    Returns the best split info among all features, and the histograms of
+    all the features. The histograms are computed by scanning the whole
+    data.
 
-    Returns the best SplitInfo among all features, along with all the feature
-    histograms that can be latter used to compute the sibling or children
-    histograms by substraction.
+    Parameters
+    ----------
+    context : SplittingContext
+        The splitting context
+    sample_indices : array of int
+        The indices of the samples at the node to split.
+
+    Returns
+    -------
+    best_split_info : SplitInfo
+        The info about the best possible split among all features.
+    histograms : array of HISTOGRAM_DTYPE, shape=(n_features, max_bins)
+        The histograms of each feature. A histogram is an array of
+        HISTOGRAM_DTYPE of size ``max_bins`` (only
+        ``n_bins_per_features[feature]`` entries are relevant).
     """
 
     ctx = context  # shorter name to avoid various line breaks
@@ -242,6 +336,7 @@ def find_node_split(context, sample_indices):
     # This is a parallelized version of the following vanilla code:
     # for i range(n_samples):
     #     ctx.ordered_gradients[i] = ctx.all_gradients[samples_indices[i]]
+    # Ordering the gradients and hessians helps to improve cache hit.
     if sample_indices.shape[0] != ctx.all_gradients.shape[0]:
         n_threads = numba.config.NUMBA_DEFAULT_NUM_THREADS
         # Each threads writes data in ordered_xx from starts[thread_idx] to
@@ -292,15 +387,40 @@ def find_node_split(context, sample_indices):
 @njit(parallel=True)
 def find_node_split_subtraction(context, sample_indices, parent_histograms,
                                 sibling_histograms):
-    """For each feature, find the best bin to split by histogram substraction
+    """For each feature, find the best bin to split on at a given node.
 
-    This in turn calls _find_histogram_split_subtraction that does not need
-    to scan the samples from this node and can therefore be significantly
-    faster than computing the histograms from data.
+    Returns the best split info among all features, and the histograms of
+    all the features.
+
+    This does the same job as ``find_node_split()`` but uses the histograms
+    of the parent and sibling of the node to split. This allows to use the
+    identity: ``histogram(parent) = histogram(node) - histogram(sibling)``,
+    which is significantly faster than computing the histograms from data.
 
     Returns the best SplitInfo among all features, along with all the feature
     histograms that can be latter used to compute the sibling or children
     histograms by substraction.
+
+    Parameters
+    ----------
+    context : SplittingContext
+        The splitting context
+    sample_indices : array of int
+        The indices of the samples at the node to split.
+    parent_histograms : array of HISTOGRAM_DTYPE of shape(n_features, max_bins)
+        The histograms of the parent
+    sibling_histograms : array of HISTOGRAM_DTYPE of \
+        shape(n_features, max_bins)
+        The histograms of the sibling
+
+    Returns
+    -------
+    best_split_info : SplitInfo
+        The info about the best possible split among all features.
+    histograms : array of HISTOGRAM_DTYPE, shape=(n_features, max_bins)
+        The histograms of each feature. A histogram is an array of
+        HISTOGRAM_DTYPE of size ``max_bins`` (only
+        ``n_bins_per_features[feature]`` entries are relevant).
     """
 
     # We can pick any feature (here the first) in the histograms to
@@ -349,7 +469,10 @@ def _find_best_feature_to_split_helper(split_infos):
 
 @njit(fastmath=True)
 def _find_histogram_split(context, feature_idx, sample_indices):
-    """Compute the histogram for a given feature and return the best bin."""
+    """Compute the histogram for a given feature
+
+    Returns the best SplitInfo among all the possible bins of the feature.
+    """
     n_samples = sample_indices.shape[0]
     binned_feature = context.binned_features.T[feature_idx]
 
@@ -385,7 +508,8 @@ def _find_histogram_split_subtraction(context, feature_idx,
                                       n_samples):
     """Compute the histogram by substraction of parent and sibling
 
-    Uses the identity: hist(parent) = hist(left) + hist(right)
+    Uses the identity: hist(parent) = hist(left) + hist(right).
+    Returns the best SplitInfo among all the possible bins of the feature.
     """
     histogram = _subtract_histograms(
         context.max_bins,
@@ -399,7 +523,13 @@ def _find_histogram_split_subtraction(context, feature_idx,
               'n_samples_left': uint32},
       fastmath=True)
 def _find_best_bin_to_split_helper(context, feature_idx, histogram, n_samples):
-    """Find best bin to split on and return the corresponding SplitInfo"""
+    """Find best bin to split on, and return the corresponding SplitInfo.
+
+    Splits that do not satisfy the splitting constraints (min_gain_to_split,
+    etc.) are discarded here. If no split can satisfy the constraints, a
+    SplitInfo with a gain of -1 is returned. If for a given node the best
+    SplitInfo has a gain of -1, it is finalized into a leaf.
+    """
     # Allocate the structure for the best split information. It can be
     # returned as such (with a negative gain) if the min_hessian_to_split
     # condition is not satisfied. Such invalid splits are later discarded by
@@ -458,7 +588,7 @@ def _split_gain(gradient_left, hessian_left, gradient_right, hessian_right,
                 sum_gradients, sum_hessians, l2_regularization):
     """Loss reduction
 
-    Compute the reduction in loss after taking a split compared to keeping
+    Compute the reduction in loss after taking a split, compared to keeping
     the node a leaf of the tree.
 
     See Equation 7 of:

@@ -1,3 +1,8 @@
+"""
+This module contains the TreeGrower class which builds a regression tree
+fitting a Newton-Raphson step, based on the gradients and hessians of the
+training data.
+"""
 from heapq import heappush, heappop
 import numpy as np
 from time import time
@@ -8,17 +13,67 @@ from .predictor import TreePredictor, PREDICTOR_RECORD_DTYPE
 
 
 class TreeNode:
-    split_info = None  # Result of the split evaluation
-    left_child = None  # Link to left node (only for non-leaf nodes)
-    right_child = None  # Link to right node (only for non-leaf nodes)
-    value = None  # Prediction value (only for leaf nodes)
-    histograms = None  # array of histogram shape = (n_features, n_bins)
-    sibling = None  # Link to sibling node, None for root
-    parent = None  # Link to parent node, None for root
-    find_split_time = 0.  # time spent finding the best split
-    construction_speed = 0.  # number of samples / find_split_time
-    apply_split_time = 0.  # time spent splitting the node
-    # wheter the subtraction method was used for histogram computation
+    """Tree Node class used in TreeGrower.
+
+    This isn't used for prediction purposes, only for training (see
+    TreePredictor).
+
+    Parameters
+    ----------
+    depth : int
+        The depth of the node, i.e. its distance from the root
+    samples_indices : array of int
+        The indices of the samples at the node
+    sum_gradients : float
+        The sum of the gradients of the samples at the nodes
+    sum_hessians : float
+        The sum of the hessians of the samples at the nodes
+    parent : TreeNode or None, optional(default=None)
+        The parent of the node. None for root.
+
+    Attributes
+    ----------
+    depth : int
+        The depth of the node, i.e. its distance from the root
+    samples_indices : array of int
+        The indices of the samples at the node
+    sum_gradients : float
+        The sum of the gradients of the samples at the nodes
+    sum_hessians : float
+        The sum of the hessians of the samples at the nodes
+    parent : TreeNode or None, optional(default=None)
+        The parent of the node. None for root.
+    split_info : SplitInfo or None
+        The result of the split evaluation
+    left_child : TreeNode or None
+        The left child of the node. None for leaves.
+    right_child : TreeNode or None
+        The right child of the node. None for leaves.
+    value : float or None
+        The value of the leaf, as computed in finalize_leaf(). None for
+        non-leaf nodes
+    find_split_time : float
+        The total time spent computing the histogram and finding the best
+        split at the node.
+    construction_speed : float
+        The Number of samples at the node divided find_split_time.
+    apply_split_time : float
+        The total time spent actually splitting the node, e.g. splitting
+        samples_indices into left and right child.
+    hist_subtraction : bool
+        Wheter the subtraction method was used for computing the histograms.
+    """
+
+    split_info = None
+    left_child = None
+    right_child = None
+    value = None
+    histograms = None
+    sibling = None
+    parent = None
+    find_split_time = 0.
+    construction_speed = 0.
+    apply_split_time = 0.
     hist_subtraction = False
 
     def __init__(self, depth, sample_indices, sum_gradients,
@@ -40,12 +95,18 @@ class TreeNode:
         return out
 
     def __lt__(self, other_node):
-        """Comparison for priority queue
+        """Comparison for priority queue.
 
-        Nodes with high gain are higher priority than nodes with node gain.
+        Nodes with high gain are higher priority than nodes with low gain.
 
         heapq.heappush only need the '<' operator.
-        heapq.heappop take the smallest item first (smaller ishigher priority).
+        heapq.heappop take the smallest item first (smaller is higher
+        priority).
+
+        Parameters
+        -----------
+        other_node : TreeNode
+            The node to compare with.
         """
         if self.split_info is None or other_node.split_info is None:
             raise ValueError("Cannot compare nodes with split_info")
@@ -53,6 +114,50 @@ class TreeNode:
 
 
 class TreeGrower:
+    """Tree grower class used to build a tree.
+
+    The tree is fitted to predict the values of a Newton-Raphson step. The
+    splits are considered in a best-first fashion, and the quality of a
+    split is defined in splitting._split_gain.
+
+    Parameters
+    ----------
+    features_data : array-like of int, shape=(n_samples, n_features)
+        The binned input samples. Must be Fortran-aligned.
+    gradients : array-like, shape=(n_samples,)
+        The gradients of each training sample. Those are the gradients of the
+        loss w.r.t the predictions, evaluated at iteration ``i - 1``.
+    hessians : array-like, shape=(n_samples,)
+        The hessians of each training sample. Those are the hessians of the
+        loss w.r.t the predictions, evaluated at iteration ``i - 1``.
+    max_leaf_nodes : int, optional(default=TODO)
+        The maximum number of leaves for each tree.
+    max_depth : int, optional(default=TODO)
+        The maximum depth of each tree. The depth of a tree is the number of
+        nodes to go from the root to the deepest leaf.
+    min_samples_leaf : int, optional(default=TODO)
+        The minimum number of samples per leaf.
+    min_gain_to_split : float, optional(default=0.)
+        The minimum gain needed to split a node. Splits with lower gain will
+        be ignored.
+    max_bins : int, optional(default=256)
+        The maximum number of bins. Used to define the shape of the
+        histograms.
+    n_bins_per_feature : array-like of int or int, optional(default=None)
+        The actual number of bins needed for each feature, which is lower or
+        equal to ``max_bins``. If it's an int, all features are considered to
+        have the same number of bins. If None, all features are considered to
+        have ``max_bins`` bins.
+    l2_regularization : float, optional(default=TODO)
+        The L2 regularization parameter.
+    min_hessian_to_split : float, optional(default=TODO)
+        The minimum sum of hessians needed in each node. Splits that result in
+        at least one child having a sum of hessians less than
+        min_hessian_to_split are discarded.
+    shrinkage : float, optional(default=TODO)
+        The shrinkage parameter to apply to the leaves values, also known as
+        learning rate.
+    """
     def __init__(self, features_data, all_gradients, all_hessians,
                  max_leaf_nodes=None, max_depth=None, min_samples_leaf=20,
                  min_gain_to_split=0., max_bins=256, n_bins_per_feature=None,
@@ -92,6 +197,11 @@ class TreeGrower:
     def _validate_parameters(self, features_data, max_leaf_nodes, max_depth,
                              min_samples_leaf, min_gain_to_split,
                              l2_regularization, min_hessian_to_split):
+        """Validate parameters passed to __init__.
+
+        Also validate parameters passed to SplittingContext because we cannot
+        raise exceptions in a jitclass.
+        """
         if features_data.dtype != np.uint8:
             raise NotImplementedError(
                 "Explicit feature binning required for now")
@@ -119,10 +229,12 @@ class TreeGrower:
                              f'must be positive.')
 
     def grow(self):
+        """Grow the tree, from root to leaves."""
         while self.can_split_further():
             self.split_next()
 
     def _intilialize_root(self):
+        """Initialize root node and finalize it if needed."""
         n_samples = self.features_data.shape[0]
         depth = 0
         if self.splitting_context.constant_hessian:
@@ -146,13 +258,24 @@ class TreeGrower:
         self._compute_spittability(self.root)
 
     def _compute_spittability(self, node, only_hist=False):
-        """Compute histograms and split_info of a node and either make it a
-        leaf or push it on the splittable node heap.
+        """Compute histograms and best possible split of a node.
 
-        only_hist is used when _compute_spittability was called by a sibling
-        node: we only want to compute the histograms, not finalize or push
-        the node. If _compute_spittability is called again by the grower on
-        this same node, the histograms won't be computed again.
+        If the best possible gain is 0 of if the constraints aren't met
+        (min_samples_leaf, min_hessian_to_split, min_gain_to_split) then the
+        node is finalized (transformed into a leaf), else it is pushed on
+        the splittable node heap.
+
+        Parameters
+        ----------
+        node : TreeNode
+            The node to evaluate.
+        only_hist : bool, optional (default=False)
+            Whether to only compute the histograms and the SplitInfo. It is
+            set to ``True`` when ``_compute_spittability`` was called by a
+            sibling node: we only want to compute the histograms (which also
+            computes the ``SplitInfo``), not finalize or push the node. If
+            ``_compute_spittability`` is called again by the grower on this
+            same node, the histograms won't be computed again.
         """
         # Compute split_info and histograms if not already done
         if node.split_info is None and node.histograms is None:
@@ -199,7 +322,12 @@ class TreeGrower:
     def split_next(self):
         """Split the node with highest potential gain.
 
-        Return the two resulting nodes created by the split.
+        Returns
+        -------
+        left : TreeNode
+            The resulting left child.
+        right : TreeNode
+            The resulting right child.
         """
         if len(self.splittable_nodes) == 0:
             raise StopIteration("No more splittable nodes")
@@ -259,10 +387,14 @@ class TreeGrower:
         return left_child_node, right_child_node
 
     def can_split_further(self):
+        """Return True if there are still nodes to split."""
         return len(self.splittable_nodes) >= 1
 
     def _finalize_leaf(self, node):
-        """Compute the prediction value that minimizes the objective function
+        """Compute the prediction value that minimizes the objective function.
+
+        This sets the node.value attribute (node is a leaf iff node.value is
+        not None).
 
         See Equation 5 of:
         XGBoost: A Scalable Tree Boosting System, T. Chen, C. Guestrin, 2016
@@ -273,11 +405,26 @@ class TreeGrower:
         self.finalized_leaves.append(node)
 
     def _finalize_splittable_nodes(self):
+        """Transform all splittable nodes into leaves.
+
+        Used when some constraint is met e.g. maximum number of leaves or
+        maximum depth."""
         while len(self.splittable_nodes) > 0:
             node = self.splittable_nodes.pop()
             self._finalize_leaf(node)
 
     def make_predictor(self, bin_thresholds=None):
+        """Make a TreePredictor object out of the current tree.
+
+        Parameters
+        ----------
+        bin_thresholds : array-like of floats, optional (default=None)
+            The actual thresholds values of each bin.
+
+        Returns
+        -------
+        A TreePredictor object.
+        """
         predictor_nodes = np.zeros(self.n_nodes, dtype=PREDICTOR_RECORD_DTYPE)
         self._fill_predictor_node_array(predictor_nodes, self.root,
                                         bin_thresholds=bin_thresholds)
@@ -285,6 +432,7 @@ class TreeGrower:
 
     def _fill_predictor_node_array(self, predictor_nodes, grower_node,
                                    bin_thresholds=None, next_free_idx=0):
+        """Helper used in make_predictor to set the TreePredictor fields."""
         node = predictor_nodes[next_free_idx]
         node['count'] = grower_node.n_samples
         node['depth'] = grower_node.depth
