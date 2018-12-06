@@ -14,9 +14,8 @@ def _make_training_data(n_bins=256, constant_hessian=True):
 
     # Generate some test data directly binned so as to test the grower code
     # independently of the binning logic.
-    features_data = rng.randint(0, n_bins - 1, size=(n_samples, 2),
-                                dtype=np.uint8)
-    features_data = np.asfortranarray(features_data)
+    X_binned = rng.randint(0, n_bins - 1, size=(n_samples, 2), dtype=np.uint8)
+    X_binned = np.asfortranarray(X_binned)
 
     def true_decision_function(input_features):
         """Ground truth decision function
@@ -33,7 +32,7 @@ def _make_training_data(n_bins=256, constant_hessian=True):
             else:
                 return 1
 
-    target = np.array([true_decision_function(x) for x in features_data],
+    target = np.array([true_decision_function(x) for x in X_binned],
                       dtype=np.float32)
 
     # Assume a square loss applied to an initial model that always predicts 0
@@ -43,7 +42,7 @@ def _make_training_data(n_bins=256, constant_hessian=True):
         all_hessians = np.ones(shape=1, dtype=np.float32)
     else:
         all_hessians = np.ones_like(all_gradients)
-    return features_data, all_gradients, all_hessians
+    return X_binned, all_gradients, all_hessians
 
 
 def _check_children_consistency(parent, left, right):
@@ -76,16 +75,16 @@ def _check_children_consistency(parent, left, right):
     ]
 )
 def test_grow_tree(n_bins, constant_hessian, stopping_param, shrinkage):
-    features_data, all_gradients, all_hessians = _make_training_data(
+    X_binned, all_gradients, all_hessians = _make_training_data(
         n_bins=n_bins, constant_hessian=constant_hessian)
-    n_samples = features_data.shape[0]
+    n_samples = X_binned.shape[0]
 
     if stopping_param == "max_leaf_nodes":
         stopping_param = {"max_leaf_nodes": 3}
     else:
         stopping_param = {"min_gain_to_split": 0.01}
 
-    grower = TreeGrower(features_data, all_gradients, all_hessians,
+    grower = TreeGrower(X_binned, all_gradients, all_hessians,
                         max_bins=n_bins, shrinkage=shrinkage,
                         min_samples_leaf=1, **stopping_param)
 
@@ -145,9 +144,9 @@ def test_grow_tree(n_bins, constant_hessian, stopping_param, shrinkage):
 def test_predictor_from_grower():
     # Build a tree on the toy 3-leaf dataset to extract the predictor.
     n_bins = 256
-    features_data, all_gradients, all_hessians = _make_training_data(
+    X_binned, all_gradients, all_hessians = _make_training_data(
         n_bins=n_bins)
-    grower = TreeGrower(features_data, all_gradients, all_hessians,
+    grower = TreeGrower(X_binned, all_gradients, all_hessians,
                         max_bins=n_bins, shrinkage=1.,
                         max_leaf_nodes=3, min_samples_leaf=5)
     grower.grow()
@@ -178,7 +177,7 @@ def test_predictor_from_grower():
     assert_array_almost_equal(predictions, expected_targets, decimal=5)
 
     # Check that training set can be recovered exactly:
-    predictions = predictor.predict_binned(features_data)
+    predictions = predictor.predict_binned(X_binned)
     assert_array_almost_equal(predictions, -all_gradients, decimal=5)
 
 
@@ -259,32 +258,32 @@ def test_min_samples_leaf_root(n_samples, min_samples_leaf):
 
 def test_init_parameters_validation():
 
-    features_data, all_gradients, all_hessians = _make_training_data()
+    X_binned, all_gradients, all_hessians = _make_training_data()
 
-    features_data_float = features_data.astype(np.float32)
+    X_binned_float = X_binned.astype(np.float32)
     assert_raises_regex(
         NotImplementedError,
         "Explicit feature binning required for now",
-        TreeGrower, features_data_float, all_gradients, all_hessians
+        TreeGrower, X_binned_float, all_gradients, all_hessians
     )
 
-    features_data_C_array = np.ascontiguousarray(features_data)
+    X_binned_C_array = np.ascontiguousarray(X_binned)
     assert_raises_regex(
         ValueError,
-        "Binned data should be passed as Fortran contiguous array",
-        TreeGrower, features_data_C_array, all_gradients, all_hessians
+        "X_binned should be passed as Fortran contiguous array",
+        TreeGrower, X_binned_C_array, all_gradients, all_hessians
     )
 
     assert_raises_regex(
         ValueError,
         "min_gain_to_split=-1 must be positive",
-        TreeGrower, features_data, all_gradients, all_hessians,
+        TreeGrower, X_binned, all_gradients, all_hessians,
         min_gain_to_split=-1
     )
 
     assert_raises_regex(
         ValueError,
         "min_hessian_to_split=-1 must be positive",
-        TreeGrower, features_data, all_gradients, all_hessians,
+        TreeGrower, X_binned, all_gradients, all_hessians,
         min_hessian_to_split=-1
     )

@@ -17,9 +17,9 @@ def test_histogram_split(n_bins):
     min_hessian_to_split = 1e-3
     min_samples_leaf = 1
     min_gain_to_split = 0.
-    binned_features = np.asfortranarray(
+    X_binned = np.asfortranarray(
         rng.randint(0, n_bins, size=(int(1e4), 2)), dtype=np.uint8)
-    binned_feature = binned_features.T[feature_idx]
+    binned_feature = X_binned.T[feature_idx]
     sample_indices = np.arange(binned_feature.shape[0], dtype=np.uint32)
     ordered_hessians = np.ones_like(binned_feature, dtype=np.float32)
     all_hessians = ordered_hessians
@@ -31,10 +31,9 @@ def test_histogram_split(n_bins):
             ordered_gradients[binned_feature <= true_bin] *= -1
             all_gradients = ordered_gradients
 
-            n_bins_per_feature = np.array([n_bins] * binned_features.shape[1],
+            n_bins_per_feature = np.array([n_bins] * X_binned.shape[1],
                                           dtype=np.uint32)
-            context = SplittingContext(binned_features.shape[1],
-                                       binned_features,
+            context = SplittingContext(X_binned,
                                        n_bins,
                                        n_bins_per_feature,
                                        all_gradients, all_hessians,
@@ -70,9 +69,9 @@ def test_split_vs_split_subtraction(constant_hessian):
     min_samples_leaf = 1
     min_gain_to_split = 0.
 
-    binned_features = rng.randint(0, n_bins, size=(n_samples, n_features),
-                                  dtype=np.uint8)
-    binned_features = np.asfortranarray(binned_features)
+    X_binned = rng.randint(0, n_bins, size=(n_samples, n_features),
+                           dtype=np.uint8)
+    X_binned = np.asfortranarray(X_binned)
     sample_indices = np.arange(n_samples, dtype=np.uint32)
     all_gradients = rng.randn(n_samples).astype(np.float32)
     if constant_hessian:
@@ -80,9 +79,9 @@ def test_split_vs_split_subtraction(constant_hessian):
     else:
         all_hessians = rng.lognormal(size=n_samples).astype(np.float32)
 
-    n_bins_per_feature = np.array([n_bins] * binned_features.shape[1],
+    n_bins_per_feature = np.array([n_bins] * X_binned.shape[1],
                                   dtype=np.uint32)
-    context = SplittingContext(n_features, binned_features, n_bins,
+    context = SplittingContext(X_binned, n_bins,
                                n_bins_per_feature,
                                all_gradients, all_hessians,
                                l2_regularization, min_hessian_to_split,
@@ -150,9 +149,9 @@ def test_gradient_and_hessian_sanity(constant_hessian):
     min_samples_leaf = 1
     min_gain_to_split = 0.
 
-    binned_features = rng.randint(0, n_bins, size=(n_samples, n_features),
-                                  dtype=np.uint8)
-    binned_features = np.asfortranarray(binned_features)
+    X_binned = rng.randint(0, n_bins, size=(n_samples, n_features),
+                           dtype=np.uint8)
+    X_binned = np.asfortranarray(X_binned)
     sample_indices = np.arange(n_samples, dtype=np.uint32)
     all_gradients = rng.randn(n_samples).astype(np.float32)
     if constant_hessian:
@@ -160,9 +159,9 @@ def test_gradient_and_hessian_sanity(constant_hessian):
     else:
         all_hessians = rng.lognormal(size=n_samples).astype(np.float32)
 
-    n_bins_per_feature = np.array([n_bins] * binned_features.shape[1],
+    n_bins_per_feature = np.array([n_bins] * X_binned.shape[1],
                                   dtype=np.uint32)
-    context = SplittingContext(n_features, binned_features, n_bins,
+    context = SplittingContext(X_binned, n_bins,
                                n_bins_per_feature,
                                all_gradients, all_hessians,
                                l2_regularization, min_hessian_to_split,
@@ -234,7 +233,6 @@ def test_split_indices():
     rng = np.random.RandomState(421)
 
     n_bins = 5
-    n_features = 2
     n_samples = 10
     l2_regularization = 0.
     min_hessian_to_split = 1e-3
@@ -242,24 +240,24 @@ def test_split_indices():
     min_gain_to_split = 0.
 
     # split will happen on feature 1 and on bin 3
-    binned_features = [[0, 0],
-                       [0, 3],
-                       [0, 4],
-                       [0, 0],
-                       [0, 0],
-                       [0, 0],
-                       [0, 0],
-                       [0, 4],
-                       [0, 0],
-                       [0, 4]]
-    binned_features = np.asfortranarray(binned_features, dtype=np.uint8)
+    X_binned = [[0, 0],
+                [0, 3],
+                [0, 4],
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [0, 4],
+                [0, 0],
+                [0, 4]]
+    X_binned = np.asfortranarray(X_binned, dtype=np.uint8)
     sample_indices = np.arange(n_samples, dtype=np.uint32)
     all_gradients = rng.randn(n_samples).astype(np.float32)
     all_hessians = np.ones(1, dtype=np.float32)
 
-    n_bins_per_feature = np.array([n_bins] * binned_features.shape[1],
+    n_bins_per_feature = np.array([n_bins] * X_binned.shape[1],
                                   dtype=np.uint32)
-    context = SplittingContext(n_features, binned_features, n_bins,
+    context = SplittingContext(X_binned, n_bins,
                                n_bins_per_feature,
                                all_gradients, all_hessians,
                                l2_regularization, min_hessian_to_split,
@@ -303,17 +301,16 @@ def test_min_gain_to_split():
     min_gain_to_split = 0.
     n_bins = 255
     n_samples = 100
-    binned_features = np.asfortranarray(
+    X_binned = np.asfortranarray(
         rng.randint(0, n_bins, size=(n_samples, 2)), dtype=np.uint8)
-    binned_feature = binned_features.T[feature_idx]
+    binned_feature = X_binned.T[feature_idx]
     sample_indices = np.arange(n_samples, dtype=np.uint32)
     all_hessians = np.ones_like(binned_feature, dtype=np.float32)
     all_gradients = np.ones_like(binned_feature, dtype=np.float32)
 
-    n_bins_per_feature = np.array([n_bins] * binned_features.shape[1],
+    n_bins_per_feature = np.array([n_bins] * X_binned.shape[1],
                                   dtype=np.uint32)
-    context = SplittingContext(binned_features.shape[1],
-                               binned_features, n_bins, n_bins_per_feature,
+    context = SplittingContext(X_binned, n_bins, n_bins_per_feature,
                                all_gradients, all_hessians,
                                l2_regularization,
                                min_hessian_to_split,

@@ -122,7 +122,7 @@ class TreeGrower:
 
     Parameters
     ----------
-    features_data : array-like of int, shape=(n_samples, n_features)
+    X_binned : array-like of int, shape=(n_samples, n_features)
         The binned input samples. Must be Fortran-aligned.
     gradients : array-like, shape=(n_samples,)
         The gradients of each training sample. Those are the gradients of the
@@ -158,13 +158,12 @@ class TreeGrower:
         The shrinkage parameter to apply to the leaves values, also known as
         learning rate.
     """
-    def __init__(self, features_data, gradients, hessians,
-                 max_leaf_nodes=None, max_depth=None, min_samples_leaf=20,
-                 min_gain_to_split=0., max_bins=256, n_bins_per_feature=None,
-                 l2_regularization=0., min_hessian_to_split=1e-3,
-                 shrinkage=1.):
+    def __init__(self, X_binned, gradients, hessians, max_leaf_nodes=None,
+                 max_depth=None, min_samples_leaf=20, min_gain_to_split=0.,
+                 max_bins=256, n_bins_per_feature=None, l2_regularization=0.,
+                 min_hessian_to_split=1e-3, shrinkage=1.):
 
-        self._validate_parameters(features_data, max_leaf_nodes, max_depth,
+        self._validate_parameters(X_binned, max_leaf_nodes, max_depth,
                                   min_samples_leaf, min_gain_to_split,
                                   l2_regularization, min_hessian_to_split)
 
@@ -173,18 +172,17 @@ class TreeGrower:
 
         if isinstance(n_bins_per_feature, int):
             n_bins_per_feature = np.array(
-                [n_bins_per_feature] * features_data.shape[1],
+                [n_bins_per_feature] * X_binned.shape[1],
                 dtype=np.uint32)
 
         self.splitting_context = SplittingContext(
-            features_data.shape[1], features_data, max_bins,
-            n_bins_per_feature, gradients, hessians,
-            l2_regularization, min_hessian_to_split, min_samples_leaf,
-            min_gain_to_split)
+            X_binned, max_bins, n_bins_per_feature, gradients,
+            hessians, l2_regularization, min_hessian_to_split,
+            min_samples_leaf, min_gain_to_split)
         self.max_leaf_nodes = max_leaf_nodes
         self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf
-        self.features_data = features_data
+        self.X_binned = X_binned
         self.min_gain_to_split = min_gain_to_split
         self.shrinkage = shrinkage
         self.splittable_nodes = []
@@ -194,7 +192,7 @@ class TreeGrower:
         self._intilialize_root()
         self.n_nodes = 1
 
-    def _validate_parameters(self, features_data, max_leaf_nodes, max_depth,
+    def _validate_parameters(self, X_binned, max_leaf_nodes, max_depth,
                              min_samples_leaf, min_gain_to_split,
                              l2_regularization, min_hessian_to_split):
         """Validate parameters passed to __init__.
@@ -202,12 +200,12 @@ class TreeGrower:
         Also validate parameters passed to SplittingContext because we cannot
         raise exceptions in a jitclass.
         """
-        if features_data.dtype != np.uint8:
+        if X_binned.dtype != np.uint8:
             raise NotImplementedError(
                 "Explicit feature binning required for now")
-        if not features_data.flags.f_contiguous:
+        if not X_binned.flags.f_contiguous:
             raise ValueError(
-                "Binned data should be passed as Fortran contiguous "
+                "X_binned should be passed as Fortran contiguous "
                 "array for maximum efficiency.")
         if max_leaf_nodes is not None and max_leaf_nodes < 1:
             raise ValueError(f'max_leaf_nodes={max_leaf_nodes} should not be'
@@ -235,7 +233,7 @@ class TreeGrower:
 
     def _intilialize_root(self):
         """Initialize root node and finalize it if needed."""
-        n_samples = self.features_data.shape[0]
+        n_samples = self.X_binned.shape[0]
         depth = 0
         if self.splitting_context.constant_hessian:
             hessian = self.splitting_context.hessians[0] * n_samples

@@ -62,7 +62,7 @@ class SplitInfo:
 
 @jitclass([
     ('n_features', uint32),
-    ('binned_features', uint8[::1, :]),
+    ('X_binned', uint8[::1, :]),
     ('max_bins', uint32),
     ('n_bins_per_feature', uint32[::1]),
     ('min_samples_leaf', uint32),
@@ -91,9 +91,7 @@ class SplittingContext:
 
     Parameters
     ----------
-    n_features : int
-        The number of features.
-    binned_features : array of int
+    X_binned : array of int
         The binned input samples. Must be Fortran-aligned.
     max_bins : int, optional(default=256)
         The maximum number of bins. Used to define the shape of the
@@ -119,13 +117,13 @@ class SplittingContext:
         The minimum gain needed to split a node. Splits with lower gain will
         be ignored.
     """
-    def __init__(self, n_features, binned_features, max_bins,
-                 n_bins_per_feature, gradients, hessians,
-                 l2_regularization, min_hessian_to_split=1e-3,
-                 min_samples_leaf=20, min_gain_to_split=0.):
+    def __init__(self, X_binned, max_bins, n_bins_per_feature,
+                 gradients, hessians, l2_regularization,
+                 min_hessian_to_split=1e-3, min_samples_leaf=20,
+                 min_gain_to_split=0.):
 
-        self.n_features = n_features
-        self.binned_features = binned_features
+        self.X_binned = X_binned
+        self.n_features = X_binned.shape[1]
         # Note: all histograms will have <max_bins> bins, but some of the
         # last bins may be unused if n_bins_per_feature[f] < max_bins
         self.max_bins = max_bins
@@ -156,7 +154,7 @@ class SplittingContext:
         # partition = [cef|abdghijkl]
         # we have 2 leaves, the left one is at position 0 and the second one at
         # position 3. The order of the samples is irrelevant.
-        self.partition = np.arange(0, binned_features.shape[0], 1, np.uint32)
+        self.partition = np.arange(0, X_binned.shape[0], 1, np.uint32)
         # buffers used in split_indices to support parallel splitting.
         self.left_indices_buffer = np.empty_like(self.partition)
         self.right_indices_buffer = np.empty_like(self.partition)
@@ -232,7 +230,7 @@ def split_indices(context, split_info, sample_indices):
     # sample_indices for simplicity, but in reality they are of the same size
     # as partition.
 
-    binned_feature = context.binned_features.T[split_info.feature_idx]
+    X_binned = context.X_binned.T[split_info.feature_idx]
 
     n_threads = numba.config.NUMBA_DEFAULT_NUM_THREADS
     n_samples = sample_indices.shape[0]
@@ -264,7 +262,7 @@ def split_indices(context, split_info, sample_indices):
         stop = start + sizes[thread_idx]
         for i in range(start, stop):
             sample_idx = sample_indices[i]
-            if binned_feature[sample_idx] <= split_info.bin_idx:
+            if X_binned[sample_idx] <= split_info.bin_idx:
                 left_indices_buffer[start + left_count] = sample_idx
                 left_count += 1
             else:
@@ -474,28 +472,28 @@ def _find_histogram_split(context, feature_idx, sample_indices):
     Returns the best SplitInfo among all the possible bins of the feature.
     """
     n_samples = sample_indices.shape[0]
-    binned_feature = context.binned_features.T[feature_idx]
+    X_binned = context.X_binned.T[feature_idx]
 
-    root_node = binned_feature.shape[0] == n_samples
+    root_node = X_binned.shape[0] == n_samples
     ordered_gradients = context.ordered_gradients[:n_samples]
     ordered_hessians = context.ordered_hessians[:n_samples]
 
     if root_node:
         if context.constant_hessian:
             histogram = _build_histogram_root_no_hessian(
-                context.max_bins, binned_feature, ordered_gradients)
+                context.max_bins, X_binned, ordered_gradients)
         else:
             histogram = _build_histogram_root(
-                context.max_bins, binned_feature, ordered_gradients,
+                context.max_bins, X_binned, ordered_gradients,
                 context.ordered_hessians)
     else:
         if context.constant_hessian:
             histogram = _build_histogram_no_hessian(
-                context.max_bins, sample_indices, binned_feature,
+                context.max_bins, sample_indices, X_binned,
                 ordered_gradients)
         else:
             histogram = _build_histogram(
-                context.max_bins, sample_indices, binned_feature,
+                context.max_bins, sample_indices, X_binned,
                 ordered_gradients, ordered_hessians)
 
     return _find_best_bin_to_split_helper(context, feature_idx, histogram,
