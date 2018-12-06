@@ -4,6 +4,7 @@ import pytest
 from pygbm.binning import BinMapper
 from pygbm.grower import TreeGrower
 from pygbm import GradientBoostingRegressor
+from pygbm import GradientBoostingClassifier
 
 X, y = make_classification(n_samples=150, n_classes=2, n_features=5,
                            n_informative=3, n_redundant=0,
@@ -42,13 +43,19 @@ def test_plot_estimator_and_lightgbm(tmpdir):
     lightgbm = pytest.importorskip('lightgbm')
     from pygbm.plotting import plot_tree
 
+    n_classes = 3
+    X, y = make_classification(n_samples=150, n_classes=n_classes,
+                               n_features=5, n_informative=3, n_redundant=0,
+                               random_state=0)
+
     n_trees = 3
-    est_pygbm = GradientBoostingRegressor(max_iter=n_trees)
+    est_pygbm = GradientBoostingClassifier(max_iter=n_trees, scoring=None)
     est_pygbm.fit(X, y)
-    est_lightgbm = lightgbm.LGBMRegressor(n_estimators=n_trees)
+    est_lightgbm = lightgbm.LGBMClassifier(n_estimators=n_trees)
     est_lightgbm.fit(X, y)
 
-    for i in range(n_trees):
+    n_total_trees = n_trees * n_classes
+    for i in range(n_total_trees):
         filename = tmpdir.join('plot_mixed_predictors.pdf')
         plot_tree(est_pygbm, est_lightgbm=est_lightgbm, tree_index=i,
                   view=False, filename=filename)

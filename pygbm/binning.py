@@ -133,11 +133,11 @@ class BinMapper(BaseEstimator, TransformerMixin):
     ----------
     max_bins : int, optional (default=256)
         The maximum number of bins to use. If for a given feature the number of
-        unique values is less than ``max_bins``, then those unique values will be
-        used instead of the quantiles.
+        unique values is less than ``max_bins``, then those unique values
+        will be used instead of the quantiles.
     subsample : int, optional (default=1e5)
-        If ``n_samples > subsample``, then ``sub_samples`` samples will be randomly
-        choosen to compute the quantiles.
+        If ``n_samples > subsample``, then ``sub_samples`` samples will be
+        randomly choosen to compute the quantiles.
         TODO: accept None?
     random_state: int or numpy.random.RandomState or None, \
         optional (default=None)

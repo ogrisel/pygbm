@@ -10,6 +10,7 @@ from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
 from sklearn.utils import check_X_y, check_random_state
 from sklearn.metrics import check_scoring
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 
 from pygbm.binning import BinMapper
 from pygbm.grower import TreeGrower
@@ -45,15 +46,11 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         The parameters that are directly passed to the grower are checked in
         TreeGrower."""
 
-        if self.loss not in _LOSSES:
-            raise ValueError("Invalid loss {}. Accepted losses are {}.".format(
-                self.loss, ', '.join(self._VALID_LOSSES)))
         if self.loss not in self._VALID_LOSSES:
             raise ValueError(
                 "Loss {} is not supported for {}. Accepted losses"
                 "are {}.".format(self.loss, self.__class__.__name__,
                                  ', '.join(self._VALID_LOSSES)))
-        self.loss_ = _LOSSES[self.loss]()
 
         if self.learning_rate <= 0:
             raise ValueError(f'learning_rate={self.learning_rate} must '
@@ -97,7 +94,7 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         # TODO: add support for pre-binned data (pass-through)?
         # TODO: test input checking
         X, y = check_X_y(X, y, dtype=[np.float32, np.float64])
-        y = y.astype(np.float32, copy=False)
+        y = self._encode_y(y)
         rng = check_random_state(self.random_state)
 
         self._validate_parameters()
@@ -113,6 +110,8 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
             duration = toc - tic
             troughput = X.nbytes / duration
             print(f"{duration:.3f} s ({troughput / 1e6:.3f} MB/s)")
+
+        self.loss_ = self._get_loss()
 
         if self.validation_split is not None:
             # stratify for classification
@@ -141,10 +140,21 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         if self.verbose:
             print("Fitting gradient boosted rounds:")
 
-        # TODO: is the initial prediction always 0? What about classif?
-        y_pred = np.zeros_like(y_train)
+        n_samples = X_binned_train.shape[0]
+        # values predicted by the trees. Used as-is in regression, and
+        # transformed into probas and / or classes for classification
+        raw_predictions = np.zeros(
+            shape=(n_samples, self.n_trees_per_iteration_),
+            dtype=y_train.dtype
+        )
+        # gradients and hessians are 1D arrays of size
+        # n_samples * n_trees_per_iteration
         gradients, hessians = self.loss_.init_gradients_and_hessians(
-            n_samples=y_train.shape[0])
+            n_samples=n_samples,
+            n_trees_per_iteration=self.n_trees_per_iteration_
+        )
+        # predictors_ is a matrix of TreePredictor objects with shape
+        # (n_iter_, n_trees_per_iteration)
         self.predictors_ = predictors = []
         self.train_scores_ = []
         if self.validation_split is not None:
@@ -160,43 +170,68 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
                 X_binned_val, y_val)
             if should_stop or self.n_iter_ == self.max_iter:
                 break
-            shrinkage = 1. if self.n_iter_ == 0 else self.learning_rate
-            # Update gradients and hessians inplace
-            self.loss_.update_gradients_and_hessians(gradients, hessians,
-                                                     y_train, y_pred)
-            grower = TreeGrower(
-                X_binned_train, gradients, hessians, max_bins=self.max_bins,
-                n_bins_per_feature=self.bin_mapper_.n_bins_per_feature_,
-                max_leaf_nodes=self.max_leaf_nodes, max_depth=self.max_depth,
-                min_samples_leaf=self.min_samples_leaf,
-                l2_regularization=self.l2_regularization,
-                shrinkage=shrinkage)
-            grower.grow()
-            predictor = grower.make_predictor(
-                bin_thresholds=self.bin_mapper_.bin_thresholds_)
-            predictors.append(predictor)
-            self.n_iter_ += 1
-            tic_pred = time()
-            # prepare leaves_data so that _update_y_pred can be @njitted
-            leaves_data = [(l.value, l.sample_indices)
-                           for l in grower.finalized_leaves]
-            _update_y_pred(leaves_data, y_pred)
-            toc_pred = time()
-            acc_prediction_time += toc_pred - tic_pred
 
-            acc_apply_split_time += grower.total_apply_split_time
-            acc_find_split_time += grower.total_find_split_time
+            # Update gradients and hessians, inplace
+            self.loss_.update_gradients_and_hessians(gradients, hessians,
+                                                     y_train, raw_predictions)
+
+            predictors.append([])
+
+            # Build `n_trees_per_iteration` trees.
+            for k, (gradients_at_k, hessians_at_k) in enumerate(zip(
+                    np.array_split(gradients, self.n_trees_per_iteration_),
+                    np.array_split(hessians, self.n_trees_per_iteration_))):
+                # the xxxx_at_k arrays are **views** on the original arrays.
+                # Note that for binary classif and regressions,
+                # n_trees_per_iteration is 1 and xxxx_at_k is equivalent to the
+                # whole array.
+
+                grower = TreeGrower(
+                    X_binned_train, gradients_at_k, hessians_at_k,
+                    max_bins=self.max_bins,
+                    n_bins_per_feature=self.bin_mapper_.n_bins_per_feature_,
+                    max_leaf_nodes=self.max_leaf_nodes,
+                    max_depth=self.max_depth,
+                    min_samples_leaf=self.min_samples_leaf,
+                    l2_regularization=self.l2_regularization,
+                    shrinkage=self.learning_rate)
+                grower.grow()
+
+                acc_apply_split_time += grower.total_apply_split_time
+                acc_find_split_time += grower.total_find_split_time
+
+                predictor = grower.make_predictor(
+                    bin_thresholds=self.bin_mapper_.bin_thresholds_)
+                predictors[-1].append(predictor)
+
+                tic_pred = time()
+                # prepare leaves_data so that _update_raw_predictions can be
+                # @njitted
+                leaves_data = [(l.value, l.sample_indices)
+                               for l in grower.finalized_leaves]
+                _update_raw_predictions(leaves_data, raw_predictions[:, k])
+                toc_pred = time()
+                acc_prediction_time += toc_pred - tic_pred
+
+            self.n_iter_ += 1
+
         if self.verbose:
             duration = time() - fit_start_time
-            n_leaf_nodes = sum(p.get_n_leaf_nodes() for p in self.predictors_)
-            print(f"Fit {len(self.predictors_)} trees in {duration:.3f} s, "
-                  f"({n_leaf_nodes} total leaf nodes)")
-            print('{:<32} {:.3f}s'.format('Time spent finding best splits:',
-                                          acc_find_split_time))
-            print('{:<32} {:.3f}s'.format('Time spent applying splits:',
-                                          acc_apply_split_time))
-            print('{:<32} {:.3f}s'.format('Time spent predicting:',
-                                          acc_prediction_time))
+            n_total_leaves = sum(
+                predictor.get_n_leaf_nodes()
+                for predictors_at_ith_iteration in self.predictors_
+                for predictor in predictors_at_ith_iteration)
+            n_predictors = sum(
+                len(predictors_at_ith_iteration)
+                for predictors_at_ith_iteration in self.predictors_)
+            print(f"Fit {n_predictors} trees in {duration:.3f} s, "
+                  f"({n_total_leaves} total leaves)")
+            print(f"{'Time spent finding best splits:':<32} "
+                  f"{acc_find_split_time:.3f}s")
+            print(f"{'Time spent applying splits:':<32} "
+                  f"{acc_apply_split_time:.3f}s")
+            print(f"{'Time spent predicting:':<32} "
+                  f"{acc_prediction_time:.3f}s")
         self.train_scores_ = np.asarray(self.train_scores_)
         if self.validation_split is not None:
             self.validation_scores_ = np.asarray(self.validation_scores_)
@@ -212,22 +247,27 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
 
         Returns
         -------
-        y : array, shape (n_samples * n_trees_per_iteration,)
+        raw_predictions : array, shape (n_samples * n_trees_per_iteration,)
             The raw predicted values.
         """
         # TODO: check input / check_fitted
         # TODO: make predictor behave correctly on pre-binned data
-        raw_predictions = np.zeros(X.shape[0], dtype=np.float32)
-        for predictor in self.predictors_:
-            raw_predictions += predictor.predict(X)
+        n_samples = X.shape[0]
+        raw_predictions = np.zeros(
+            shape=(n_samples, self.n_trees_per_iteration_), dtype=np.float32)
+        # Should we parallelize this?
+        for predictors_of_ith_iteration in self.predictors_:
+            for k, predictor in enumerate(predictors_of_ith_iteration):
+                raw_predictions[:, k] += predictor.predict(X)
 
         return raw_predictions
 
     def _predict_binned(self, X_binned):
         """Predict values or classes for binned data X.
 
-        TODO: This is incorrect now that we support classification right? This
+        TODO: This is incorrect now that we support classification. This
         should return classes, not the raw values from the leaves.
+        Check back shapes and names once we fix this.
 
         Parameters
         ----------
@@ -236,12 +276,17 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
 
         Returns
         -------
-        y : array, shape (n_samples,)
+        y : array, shape (n_samples * n_trees_per_iteration)
             The predicted values or classes.
         """
-        predicted = np.zeros(X_binned.shape[0], dtype=np.float32)
-        for predictor in self.predictors_:
-            predicted += predictor.predict_binned(X_binned)
+        n_samples = X_binned.shape[0]
+        predicted = np.zeros(n_samples * self.n_trees_per_iteration_,
+                             dtype=np.float32)
+        # Should we parallelize this?
+        for predictors_of_ith_iteration in self.predictors_:
+            for k, predictor in enumerate(predictors_of_ith_iteration):
+                start, end = n_samples * k, n_samples * (k + 1)
+                predicted[start:end] += predictor.predict_binned(X_binned)
         return predicted
 
     def _stopping_criterion(self, start_time, scorer, X_binned_train, y_train,
@@ -263,12 +308,27 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
                 log_msg += f", {self.scoring} val: {score_val:.5f},"
 
         if self.n_iter_ > 0:
+            # TODO: that's rather the average iteration time right?
+            # Also, all of the logging/printing should be done somewhere else
             iteration_time = (time() - start_time) / self.n_iter_
-            predictor_nodes = self.predictors_[-1].nodes
-            max_depth = predictor_nodes['depth'].max()
-            n_leaf_nodes = predictor_nodes['is_leaf'].sum()
-            log_msg += (f" {n_leaf_nodes} leaf nodes, max depth {max_depth}"
-                        f" in {iteration_time:0.3f}s")
+            predictors_of_ith_iteration = [
+                predictors_list for predictors_list in self.predictors_[-1]
+                if predictors_list
+            ]
+            n_trees = len(predictors_of_ith_iteration)
+            max_depth = max(predictor.get_max_depth()
+                            for predictor in predictors_of_ith_iteration)
+            n_leaves = sum(predictor.get_n_leaf_nodes()
+                           for predictor in predictors_of_ith_iteration)
+
+            if n_trees == 1:
+                log_msg += (f" {n_trees} tree, {n_leaves} leaves, ")
+            else:
+                log_msg += (f" {n_trees} trees, {n_leaves} leaves ")
+                log_msg += (f"({int(n_leaves / n_trees)} on avg), ")
+
+            log_msg += (f"max depth = {max_depth} "
+                        f"in {iteration_time:0.3f}s")
 
         if self.verbose:
             print(log_msg)
@@ -289,6 +349,14 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         # sklearn scores: higher is always better.
         best_with_tol = max(context_scores) * (1 - tol)
         return candidate >= best_with_tol
+
+    @abstractmethod
+    def _get_loss(self):
+        pass
+
+    @abstractmethod
+    def _encode_y(self, y=None):
+        pass
 
 
 class GradientBoostingRegressor(BaseGradientBoostingMachine, RegressorMixin):
@@ -362,7 +430,18 @@ class GradientBoostingRegressor(BaseGradientBoostingMachine, RegressorMixin):
         y : array, shape (n_samples,)
             The predicted values.
         """
-        return self._raw_predict(X)
+        # Return raw predictions after converting shape
+        # (n_samples, 1) to (n_samples,)
+        return self._raw_predict(X).ravel()
+
+    def _encode_y(self, y):
+        # Just convert y to float32
+        self.n_trees_per_iteration_ = 1
+        y = y.astype(np.float32, copy=False)
+        return y
+
+    def _get_loss(self):
+        return _LOSSES[self.loss]()
 
 
 class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
@@ -413,14 +492,14 @@ class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
         TODO: any chance we can link to sklearn glossary?
     """
 
-    _VALID_LOSSES = ('binary_crossentropy',)
+    _VALID_LOSSES = ('binary_crossentropy', 'categorical_crossentropy',
+                     'auto')
 
-    def __init__(self, loss='binary_crossentropy', learning_rate=0.1,
-                 max_iter=100, max_leaf_nodes=31, max_depth=None,
-                 min_samples_leaf=20, l2_regularization=0., max_bins=256,
-                 max_no_improvement=5, validation_split=0.1,
-                 scoring='neg_mean_squared_error', tol=1e-7, verbose=0,
-                 random_state=None):
+    def __init__(self, loss='auto', learning_rate=0.1, max_iter=100,
+                 max_leaf_nodes=31, max_depth=None, min_samples_leaf=20,
+                 l2_regularization=0., max_bins=256, max_no_improvement=5,
+                 validation_split=0.1, scoring='neg_mean_squared_error',
+                 tol=1e-7, verbose=0, random_state=None):
         super(GradientBoostingClassifier, self).__init__(
             loss=loss, learning_rate=learning_rate, max_iter=max_iter,
             max_leaf_nodes=max_leaf_nodes, max_depth=max_depth,
@@ -443,7 +522,9 @@ class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
         y : array, shape (n_samples,)
             The predicted classes.
         """
-        return np.argmax(self.predict_proba(X), axis=1)
+        # This could be done in parallel
+        encoded_classes = np.argmax(self.predict_proba(X), axis=1)
+        return self.classes_[encoded_classes]
 
     def predict_proba(self, X):
         """Predict class probabilities for X.
@@ -461,24 +542,46 @@ class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
         raw_predictions = self._raw_predict(X)
         return self.loss_.predict_proba(raw_predictions)
 
+    def _encode_y(self, y):
+        # encode classes into 0 ... n_classes - 1 and sets attributes classes_
+        # and n_trees_per_iteration_
+        label_encoder = LabelEncoder()
+        encoded_y = label_encoder.fit_transform(y)
+        self.classes_ = label_encoder.classes_
+        n_classes = self.classes_.shape[0]
+        # only 1 tree for binary classification. For multiclass classification,
+        # we build 1 tree per class.
+        self.n_trees_per_iteration_ = 1 if n_classes <= 2 else n_classes
+        encoded_y = encoded_y.astype(np.float32, copy=False)
+        return encoded_y
+
+    def _get_loss(self):
+        if self.loss == 'auto':
+            if self.n_trees_per_iteration_ == 1:
+                return _LOSSES['binary_crossentropy']()
+            else:
+                return _LOSSES['categorical_crossentropy']()
+
+        return _LOSSES[self.loss]()
+
 
 @njit(parallel=True)
-def _update_y_pred(leaves_data, y_pred):
-    """Update y_pred by reading the predictions of the ith tree directly
-    form the leaves.
+def _update_raw_predictions(leaves_data, raw_predictions):
+    """Update raw_predictions by reading the predictions of the ith tree
+    directly form the leaves.
 
-    Can only be used for predicting the training data. y_pred contains the
-    sum of the tree values from iteration 0 to i - 1. This adds the
-    predictions of the ith tree to y_pred.
+    Can only be used for predicting the training data. raw_predictions
+    contains the sum of the tree values from iteration 0 to i - 1. This adds
+    the predictions of the ith tree to raw_predictions.
 
     Parameters
     ----------
     leaves_data: list of tuples (leaf.value, leaf.sample_indices)
-        The leaves data used to update y_pred.
-    y_pred : array-like, shape=(n_samples,)
+        The leaves data used to update raw_predictions.
+    raw_predictions : array-like, shape=(n_samples,)
         The raw predictions for the training data.
     """
     for leaf_idx in prange(len(leaves_data)):
         leaf_value, sample_indices = leaves_data[leaf_idx]
         for sample_idx in sample_indices:
-            y_pred[sample_idx] += leaf_value
+            raw_predictions[sample_idx] += leaf_value

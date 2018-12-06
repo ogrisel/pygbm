@@ -158,7 +158,7 @@ class TreeGrower:
         The shrinkage parameter to apply to the leaves values, also known as
         learning rate.
     """
-    def __init__(self, features_data, all_gradients, all_hessians,
+    def __init__(self, features_data, gradients, hessians,
                  max_leaf_nodes=None, max_depth=None, min_samples_leaf=20,
                  min_gain_to_split=0., max_bins=256, n_bins_per_feature=None,
                  l2_regularization=0., min_hessian_to_split=1e-3,
@@ -178,7 +178,7 @@ class TreeGrower:
 
         self.splitting_context = SplittingContext(
             features_data.shape[1], features_data, max_bins,
-            n_bins_per_feature, all_gradients, all_hessians,
+            n_bins_per_feature, gradients, hessians,
             l2_regularization, min_hessian_to_split, min_samples_leaf,
             min_gain_to_split)
         self.max_leaf_nodes = max_leaf_nodes
@@ -238,13 +238,13 @@ class TreeGrower:
         n_samples = self.features_data.shape[0]
         depth = 0
         if self.splitting_context.constant_hessian:
-            hessian = self.splitting_context.all_hessians[0] * n_samples
+            hessian = self.splitting_context.hessians[0] * n_samples
         else:
-            hessian = self.splitting_context.all_hessians.sum()
+            hessian = self.splitting_context.hessians.sum()
         self.root = TreeNode(
             depth=depth,
             sample_indices=self.splitting_context.partition.view(),
-            sum_gradients=self.splitting_context.all_gradients.sum(),
+            sum_gradients=self.splitting_context.gradients.sum(),
             sum_hessians=hessian
         )
         if (self.max_leaf_nodes is not None and self.max_leaf_nodes == 1):

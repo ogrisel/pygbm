@@ -14,6 +14,10 @@ def plot_tree(est_or_grower, est_lightgbm=None, tree_index=0, view=True,
     profiling information that are not kept in the predictor trees that
     result from fitting a GradientBoostingMachine.
 
+    tree_index corresponds to the ith built tree. In a multiclass setting,
+    e.g. with 3 classes, tree_index=5 will print the third tree of the
+    second iteration.
+
     Can also plot a LightGBM estimator (on the left) for comparison.
 
     Requires matplotlib and graphviz (both python package and binary program).
@@ -25,7 +29,9 @@ def plot_tree(est_or_grower, est_lightgbm=None, tree_index=0, view=True,
     """
     def make_pygbm_tree():
         def add_predictor_node(node_idx, parent=None, decision=None):
-            predictor_tree = est_or_grower.predictors_[tree_index]
+            iteration = tree_index // est_or_grower.n_trees_per_iteration_
+            k = tree_index % est_or_grower.n_trees_per_iteration_
+            predictor_tree = est_or_grower.predictors_[iteration][k]
             node = predictor_tree.nodes[node_idx]
             name = 'split__{}'.format(node_idx)
             label = 'split_feature_index: {}'.format(

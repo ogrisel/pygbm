@@ -25,6 +25,9 @@ class TreePredictor:
     def get_n_leaf_nodes(self):
         return int(self.nodes['is_leaf'].sum())
 
+    def get_max_depth(self):
+        return int(self.nodes['depth'].max())
+
     def predict_binned(self, binned_data, out=None):
         if out is None:
             out = np.empty(binned_data.shape[0], dtype=np.float32)

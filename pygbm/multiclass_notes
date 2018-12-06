@@ -1,0 +1,25 @@
+Notes about multiclass classification
+=====================================
+
+Adding support for multiclass classification involves a few changes. The
+main one is that instead of building 1 tree per iteration (like in binary
+classification and regression), we build K trees per iteration, where K is
+the number of classes.
+
+Each tree is a kind of OVR tree, but trees are not completely independent
+because they influence each others when the gradients and hessians are
+updated in CategoricalCrossEntropy.update_gradients_and_hessians().
+Concretely, the K trees of the ith iteration do not depend on each other,
+but each tree at iteration i depends on *all* the K trees of iteration i -
+1.
+
+For a given sample, the probability that it belongs to class k is computed
+as a regular softmax between scores = [scores_0, scores_1, ... scores_K-1]
+where scores_k = sum(<leaf value of kth tree of iteration i>
+                     for i in range(n_iterations)).
+The predicted class is then the argmax of the K probabilities.
+
+Regarding implementation details, the arrays gradients and hessians (for
+non-constant hessians) are now 1D arrays of size (n_samples *
+n_trees_per_iteration), instead of just (n_samples). raw_predictions is now
+a 2D array of shape (n_samples, n_trees_per_iteration)

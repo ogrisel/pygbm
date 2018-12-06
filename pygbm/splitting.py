@@ -67,8 +67,8 @@ class SplitInfo:
     ('n_bins_per_feature', uint32[::1]),
     ('min_samples_leaf', uint32),
     ('min_gain_to_split', float32),
-    ('all_gradients', float32[::1]),
-    ('all_hessians', float32[::1]),
+    ('gradients', float32[::1]),
+    ('hessians', float32[::1]),
     ('ordered_gradients', float32[::1]),
     ('ordered_hessians', float32[::1]),
     ('sum_gradients', float32),
@@ -120,7 +120,7 @@ class SplittingContext:
         be ignored.
     """
     def __init__(self, n_features, binned_features, max_bins,
-                 n_bins_per_feature, all_gradients, all_hessians,
+                 n_bins_per_feature, gradients, hessians,
                  l2_regularization, min_hessian_to_split=1e-3,
                  min_samples_leaf=20, min_gain_to_split=0.):
 
@@ -130,20 +130,20 @@ class SplittingContext:
         # last bins may be unused if n_bins_per_feature[f] < max_bins
         self.max_bins = max_bins
         self.n_bins_per_feature = n_bins_per_feature
-        self.all_gradients = all_gradients
-        self.all_hessians = all_hessians
+        self.gradients = gradients
+        self.hessians = hessians
         # for root node, gradients and hessians are already ordered
-        self.ordered_gradients = all_gradients.copy()
-        self.ordered_hessians = all_hessians.copy()
-        self.sum_gradients = self.all_gradients.sum()
-        self.sum_hessians = self.all_hessians.sum()
-        self.constant_hessian = all_hessians.shape[0] == 1
+        self.ordered_gradients = gradients.copy()
+        self.ordered_hessians = hessians.copy()
+        self.sum_gradients = self.gradients.sum()
+        self.sum_hessians = self.hessians.sum()
+        self.constant_hessian = hessians.shape[0] == 1
         self.l2_regularization = l2_regularization
         self.min_hessian_to_split = min_hessian_to_split
         self.min_samples_leaf = min_samples_leaf
         self.min_gain_to_split = min_gain_to_split
         if self.constant_hessian:
-            self.constant_hessian_value = self.all_hessians[0]  # 1 scalar
+            self.constant_hessian_value = self.hessians[0]  # 1 scalar
         else:
             self.constant_hessian_value = float32(1.)  # won't be used anyway
 
@@ -335,9 +335,9 @@ def find_node_split(context, sample_indices):
     # Populate ordered_gradients and ordered_hessians. (Already done for root)
     # This is a parallelized version of the following vanilla code:
     # for i range(n_samples):
-    #     ctx.ordered_gradients[i] = ctx.all_gradients[samples_indices[i]]
+    #     ctx.ordered_gradients[i] = ctx.gradients[samples_indices[i]]
     # Ordering the gradients and hessians helps to improve cache hit.
-    if sample_indices.shape[0] != ctx.all_gradients.shape[0]:
+    if sample_indices.shape[0] != ctx.gradients.shape[0]:
         n_threads = numba.config.NUMBA_DEFAULT_NUM_THREADS
         # Each threads writes data in ordered_xx from starts[thread_idx] to
         # starts[thread_idx] + sizes[thread_idx]
@@ -352,13 +352,13 @@ def find_node_split(context, sample_indices):
             for thread_idx in prange(n_threads):
                 for i in range(starts[thread_idx],
                                starts[thread_idx] + sizes[thread_idx]):
-                    ordered_gradients[i] = ctx.all_gradients[sample_indices[i]]
+                    ordered_gradients[i] = ctx.gradients[sample_indices[i]]
         else:
             for thread_idx in prange(n_threads):
                 for i in range(starts[thread_idx],
                                starts[thread_idx] + sizes[thread_idx]):
-                    ordered_gradients[i] = ctx.all_gradients[sample_indices[i]]
-                    ordered_hessians[i] = ctx.all_hessians[sample_indices[i]]
+                    ordered_gradients[i] = ctx.gradients[sample_indices[i]]
+                    ordered_hessians[i] = ctx.hessians[sample_indices[i]]
 
     ctx.sum_gradients = ctx.ordered_gradients[:n_samples].sum()
     if ctx.constant_hessian:
