@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from sklearn.utils.testing import assert_raises_regex
 from sklearn.datasets import make_classification, make_regression
@@ -69,8 +71,8 @@ def test_init_parameters_validation(GradientBoosting, X, y):
 
     assert_raises_regex(
         ValueError,
-        f"max_no_improvement=0 must not be smaller than 1",
-        GradientBoosting(max_no_improvement=0).fit, X, y
+        f"n_iter_no_change=1 must not be smaller than 2",
+        GradientBoosting(n_iter_no_change=1).fit, X, y
     )
 
     for validation_split in (-1, 0):
@@ -80,12 +82,11 @@ def test_init_parameters_validation(GradientBoosting, X, y):
             GradientBoosting(validation_split=validation_split).fit, X, y
         )
 
-    for tol in (-1, 0):
-        assert_raises_regex(
-            ValueError,
-            f"tol={tol} must be strictly positive",
-            GradientBoosting(tol=tol).fit, X, y
-        )
+    assert_raises_regex(
+        ValueError,
+        f"tol=-1 must not be smaller than 0",
+        GradientBoosting(tol=-1).fit, X, y
+    )
 
 
 @pytest.mark.parametrize('n_classes', (2, 3))
@@ -106,3 +107,67 @@ def test_classification_input(n_classes, mapping):
     pred_mapped_after = [mapping(target) for target in pred]
 
     assert_array_equal(pred_mapped, pred_mapped_after)
+
+
+@pytest.mark.skipif(
+    int(os.environ.get("NUMBA_DISABLE_JIT", 0)) == 1,
+    reason="Travis times out without numba")
+@pytest.mark.parametrize('scoring, validation_split, tol', [
+    ('neg_mean_squared_error', .1, 1e-7),
+    ('neg_mean_squared_error', None, 1e-1),  # need much higher tol on trainset
+    (None, None, None),  # no early stopping
+])
+def test_early_stopping_regression(scoring, validation_split, tol):
+
+    max_iter = 500
+    n_iter_no_change = 5
+
+    X, y = make_regression(random_state=0)
+
+    gb = GradientBoostingRegressor(verbose=1,  # just for coverage
+                                   scoring=scoring,
+                                   tol=tol,
+                                   validation_split=validation_split,
+                                   max_iter=max_iter,
+                                   n_iter_no_change=n_iter_no_change,
+                                   random_state=0)
+    gb.fit(X, y)
+
+    if scoring is not None:
+        assert n_iter_no_change <= gb.n_iter_ < max_iter
+    else:
+        assert gb.n_iter_ == max_iter
+
+
+@pytest.mark.skipif(
+    int(os.environ.get("NUMBA_DISABLE_JIT", 0)) == 1,
+    reason="Travis times out without numba")
+@pytest.mark.parametrize('data', (
+    make_classification(random_state=0),
+    make_classification(n_classes=3, n_clusters_per_class=1, random_state=0)
+))
+@pytest.mark.parametrize('scoring, validation_split, tol', [
+    ('accuracy', .1, .01),
+    ('accuracy', None, .1),
+    (None, None, None),  # no early stopping
+])
+def test_early_stopping_classification(data, scoring, validation_split, tol):
+
+    max_iter = 500
+    n_iter_no_change = 5
+
+    X, y = data
+
+    gb = GradientBoostingClassifier(verbose=1,  # just for coverage
+                                    scoring=scoring,
+                                    tol=tol,
+                                    validation_split=validation_split,
+                                    max_iter=max_iter,
+                                    n_iter_no_change=n_iter_no_change,
+                                    random_state=0)
+    gb.fit(X, y)
+
+    if scoring is not None:
+        assert n_iter_no_change <= gb.n_iter_ < max_iter
+    else:
+        assert gb.n_iter_ == max_iter

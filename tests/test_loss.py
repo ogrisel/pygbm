@@ -107,7 +107,7 @@ def test_numerical_gradients(loss, n_classes, n_trees_per_iteration):
 
     # Approximate gradients
     # For multiclass loss, we should only change the predictions of one tree
-    # (here the first), hence the use of offset[:n_samples] += eps
+    # (here the first), hence the use of offset[:, 0] += eps
     # As a softmax is computed, offsetting the whole array by a constant would
     # have no effect on the probabilities, and thus on the loss
     eps = 1e-9

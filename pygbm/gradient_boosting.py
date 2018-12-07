@@ -11,6 +11,7 @@ from sklearn.utils import check_X_y, check_random_state
 from sklearn.metrics import check_scoring
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+from sklearn.utils.validation import check_is_fitted
 
 from pygbm.binning import BinMapper
 from pygbm.grower import TreeGrower
@@ -23,7 +24,7 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
     @abstractmethod
     def __init__(self, loss, learning_rate, max_iter, max_leaf_nodes,
                  max_depth, min_samples_leaf, l2_regularization, max_bins,
-                 max_no_improvement, validation_split, scoring, tol, verbose,
+                 scoring, validation_split, n_iter_no_change, tol, verbose,
                  random_state):
         self.loss = loss
         self.learning_rate = learning_rate
@@ -33,7 +34,7 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         self.min_samples_leaf = min_samples_leaf
         self.l2_regularization = l2_regularization
         self.max_bins = max_bins
-        self.max_no_improvement = max_no_improvement
+        self.n_iter_no_change = n_iter_no_change
         self.validation_split = validation_split
         self.scoring = scoring
         self.tol = tol
@@ -58,15 +59,15 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         if self.max_iter < 1:
             raise ValueError(f'max_iter={self.max_iter} must '
                              f'not be smaller than 1.')
-        if self.max_no_improvement < 1:
-            raise ValueError(f'max_no_improvement={self.max_no_improvement} '
-                             f'must not be smaller than 1.')
+        if self.n_iter_no_change < 2:
+            raise ValueError(f'n_iter_no_change={self.n_iter_no_change} '
+                             f'must not be smaller than 2.')
         if self.validation_split is not None and self.validation_split <= 0:
             raise ValueError(f'validation_split={self.validation_split} '
                              f'must be strictly positive, or None.')
-        if self.tol <= 0:
+        if self.tol is not None and self.tol < 0:
             raise ValueError(f'tol={self.tol} '
-                             f'must be strictly positive.')
+                             f'must not be smaller than 0.')
 
     def fit(self, X, y):
         """Fit the gradient boosting model.
@@ -156,20 +157,29 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         # predictors_ is a matrix of TreePredictor objects with shape
         # (n_iter_, n_trees_per_iteration)
         self.predictors_ = predictors = []
-        self.train_scores_ = []
-        if self.validation_split is not None:
-            self.validation_scores_ = []
+
         scorer = check_scoring(self, self.scoring)
-        gb_start_time = time()
-        # TODO: compute training loss and use it for early stopping if no
-        # validation data is provided?
-        self.n_iter_ = 0
-        while True:
-            should_stop = self._stopping_criterion(
-                gb_start_time, scorer, X_binned_small_train, y_small_train,
-                X_binned_val, y_val)
-            if should_stop or self.n_iter_ == self.max_iter:
-                break
+        self.train_scores_ = []
+        if self.scoring is not None:
+            # Add predictions of the initial model (before the first tree)
+            predicted_train = self._predict_binned(X_binned_train)
+            score_train = scorer._sign * scorer._score_func(y_train,
+                                                            predicted_train)
+            self.train_scores_.append(score_train)
+
+            if self.validation_split is not None:
+                self.validation_scores_ = []
+                predicted_val = self._predict_binned(X_binned_val)
+                score_val = scorer._sign * scorer._score_func(y_val,
+                                                              predicted_val)
+                self.validation_scores_.append(score_val)
+
+        for iteration in range(self.max_iter):
+
+            if self.verbose:
+                iteration_start_time = time()
+                print(f"[{iteration + 1}/{self.max_iter}] ", end='',
+                      flush=True)
 
             # Update gradients and hessians, inplace
             self.loss_.update_gradients_and_hessians(gradients, hessians,
@@ -205,6 +215,7 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
                 predictors[-1].append(predictor)
 
                 tic_pred = time()
+
                 # prepare leaves_data so that _update_raw_predictions can be
                 # @njitted
                 leaves_data = [(l.value, l.sample_indices)
@@ -213,7 +224,15 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
                 toc_pred = time()
                 acc_prediction_time += toc_pred - tic_pred
 
-            self.n_iter_ += 1
+            should_stop = self._check_early_stopping(
+                scorer, X_binned_small_train, y_small_train,
+                X_binned_val, y_val)
+
+            if self.verbose:
+                self._print_iteration_stats(iteration_start_time)
+
+            if should_stop:
+                break
 
         if self.verbose:
             duration = time() - fit_start_time
@@ -232,18 +251,99 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
                   f"{acc_apply_split_time:.3f}s")
             print(f"{'Time spent predicting:':<32} "
                   f"{acc_prediction_time:.3f}s")
+
         self.train_scores_ = np.asarray(self.train_scores_)
-        if self.validation_split is not None:
+        if self.scoring is not None and self.validation_split is not None:
             self.validation_scores_ = np.asarray(self.validation_scores_)
         return self
 
-    def _raw_predict(self, X):
+    def _check_early_stopping(self, scorer, X_binned_train, y_train,
+                              X_binned_val, y_val):
+        """Check if fitting should be early-stopped.
+
+        Return True (do early stopping) if the score at iteration i hasn't
+        improved any of the last n_iter_no_change scores by at least tol
+        percent.
+
+        Scores are computed on validation data or on training data.
+        """
+
+        if self.scoring is None:
+            # no early stopping.
+            # In sklearn early stopping is not done if n_iter_no_change is None
+            return False
+
+        def _should_stop(scores):
+            if len(scores) - 1 < self.n_iter_no_change:
+                # - 1 because scores[0] is for the init model before the first
+                # tree.
+                return False
+
+            current_score = scores[-1]  # score at current iteration
+            previous_scores = scores[-self.n_iter_no_change:-1]
+            return all(
+                current_score < prev_score * (1 + self.tol * scorer._sign)
+                for prev_score in previous_scores
+            )
+
+        # TODO: make sure that self.predict can work on binned data and
+        # then only use the public scorer.__call__.
+        predicted_train = self._predict_binned(X_binned_train)
+        score_train = scorer._sign * scorer._score_func(y_train,
+                                                        predicted_train)
+        self.train_scores_.append(score_train)
+
+        if self.validation_split is not None:
+            predicted_val = self._predict_binned(X_binned_val)
+            score_val = scorer._sign * scorer._score_func(y_val,
+                                                          predicted_val)
+            self.validation_scores_.append(score_val)
+            return _should_stop(self.validation_scores_)
+
+        return _should_stop(self.train_scores_)
+
+    def _print_iteration_stats(self, iteration_start_time):
+        """Print info about the current fitting iteration."""
+        log_msg = ''
+
+        predictors_of_ith_iteration = [
+            predictors_list for predictors_list in self.predictors_[-1]
+            if predictors_list
+        ]
+        n_trees = len(predictors_of_ith_iteration)
+        max_depth = max(predictor.get_max_depth()
+                        for predictor in predictors_of_ith_iteration)
+        n_leaves = sum(predictor.get_n_leaf_nodes()
+                       for predictor in predictors_of_ith_iteration)
+
+        if n_trees == 1:
+            log_msg += (f"{n_trees} tree, {n_leaves} leaves, ")
+        else:
+            log_msg += (f"{n_trees} trees, {n_leaves} leaves ")
+            log_msg += (f"({int(n_leaves / n_trees)} on avg), ")
+
+        log_msg += f"max depth = {max_depth}, "
+
+        if self.scoring is not None:
+            log_msg += f"{self.scoring} train: {self.train_scores_[-1]:.5f}, "
+            if self.validation_split is not None:
+                log_msg += (f"{self.scoring} val: "
+                            f"{self.validation_scores_[-1]:.5f}, ")
+
+        iteration_time = time() - iteration_start_time
+        log_msg += f"in {iteration_time:0.3f}s"
+
+        print(log_msg)
+
+    def _raw_predict(self, X, binned=False):
         """Return the sum of the leaves values over all predictors.
 
         Parameters
         ----------
         X : array-like, shape=(n_samples, n_features)
             The input samples.
+        binned : bool, optional (default=False)
+            If True, X is considered to be already binned.
 
         Returns
         -------
@@ -251,104 +351,19 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
             The raw predicted values.
         """
         # TODO: check input / check_fitted
-        # TODO: make predictor behave correctly on pre-binned data
         n_samples = X.shape[0]
         raw_predictions = np.zeros(
-            shape=(n_samples, self.n_trees_per_iteration_), dtype=np.float32)
+            shape=(n_samples, self.n_trees_per_iteration_),
+            dtype=np.float32
+        )
         # Should we parallelize this?
         for predictors_of_ith_iteration in self.predictors_:
             for k, predictor in enumerate(predictors_of_ith_iteration):
-                raw_predictions[:, k] += predictor.predict(X)
+                predict = (predictor.predict_binned if binned
+                           else predictor.predict)
+                raw_predictions[:, k] += predict(X)
 
         return raw_predictions
-
-    def _predict_binned(self, X_binned):
-        """Predict values or classes for binned data X.
-
-        TODO: This is incorrect now that we support classification. This
-        should return classes, not the raw values from the leaves.
-        Check back shapes and names once we fix this.
-
-        Parameters
-        ----------
-        X_binned : array-like, shape=(n_samples, n_features)
-            The binned input samples. Entries should be integers.
-
-        Returns
-        -------
-        y : array, shape (n_samples * n_trees_per_iteration)
-            The predicted values or classes.
-        """
-        n_samples = X_binned.shape[0]
-        predicted = np.zeros(n_samples * self.n_trees_per_iteration_,
-                             dtype=np.float32)
-        # Should we parallelize this?
-        for predictors_of_ith_iteration in self.predictors_:
-            for k, predictor in enumerate(predictors_of_ith_iteration):
-                start, end = n_samples * k, n_samples * (k + 1)
-                predicted[start:end] += predictor.predict_binned(X_binned)
-        return predicted
-
-    def _stopping_criterion(self, start_time, scorer, X_binned_train, y_train,
-                            X_binned_val, y_val):
-        log_msg = f"[{self.n_iter_}/{self.max_iter}]"
-
-        if self.scoring is not None:
-            # TODO: make sure that self.predict can work on binned data and
-            # then only use the public scorer.__call__.
-            predicted_train = self._predict_binned(X_binned_train)
-            score_train = scorer._score_func(y_train, predicted_train)
-            self.train_scores_.append(score_train)
-            log_msg += f" {self.scoring} train: {score_train:.5f},"
-
-            if self.validation_split is not None:
-                predicted_val = self._predict_binned(X_binned_val)
-                score_val = scorer._score_func(y_val, predicted_val)
-                self.validation_scores_.append(score_val)
-                log_msg += f", {self.scoring} val: {score_val:.5f},"
-
-        if self.n_iter_ > 0:
-            # TODO: that's rather the average iteration time right?
-            # Also, all of the logging/printing should be done somewhere else
-            iteration_time = (time() - start_time) / self.n_iter_
-            predictors_of_ith_iteration = [
-                predictors_list for predictors_list in self.predictors_[-1]
-                if predictors_list
-            ]
-            n_trees = len(predictors_of_ith_iteration)
-            max_depth = max(predictor.get_max_depth()
-                            for predictor in predictors_of_ith_iteration)
-            n_leaves = sum(predictor.get_n_leaf_nodes()
-                           for predictor in predictors_of_ith_iteration)
-
-            if n_trees == 1:
-                log_msg += (f" {n_trees} tree, {n_leaves} leaves, ")
-            else:
-                log_msg += (f" {n_trees} trees, {n_leaves} leaves ")
-                log_msg += (f"({int(n_leaves / n_trees)} on avg), ")
-
-            log_msg += (f"max depth = {max_depth} "
-                        f"in {iteration_time:0.3f}s")
-
-        if self.verbose:
-            print(log_msg)
-
-        if self.validation_split is not None:
-            return self._should_stop(self.validation_scores_)
-        else:
-            return self._should_stop(self.train_scores_)
-
-    def _should_stop(self, scores):
-        if (len(scores) == 0 or
-                (self.max_no_improvement
-                 and len(scores) < self.max_no_improvement)):
-            return False
-        context_scores = scores[-self.max_no_improvement:]
-        candidate = scores[-self.max_no_improvement]
-        tol = 0. if self.tol is None else self.tol
-        # sklearn scores: higher is always better.
-        best_with_tol = max(context_scores) * (1 - tol)
-        return candidate >= best_with_tol
 
     @abstractmethod
     def _get_loss(self):
@@ -356,6 +371,15 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
 
     @abstractmethod
     def _encode_y(self, y=None):
+        pass
+
+    @property
+    def n_iter_(self):
+        check_is_fitted(self, 'predictors_')
+        return len(self.predictors_)
+
+    @abstractmethod
+    def _predict_binned(self, X_binned):
         pass
 
 
@@ -387,35 +411,50 @@ class GradientBoostingRegressor(BaseGradientBoostingMachine, RegressorMixin):
         allows for a much faster training stage. Features with a small
         number of unique values may use less than ``max_bins`` bins. Must be no
         larger than 256.
-    max_no_improvement : int, optional(default=TODO)
-        TODO
-    validation_split : int or float, optional(default=TODO)
-        TODO
-    scoring : str, optional(default=TODO)
-        TODO
-    verbose: int, optional(default=0)
+    scoring : str or callable or None, \
+        optional (default='neg_mean_squared_error')
+        Scoring parameter to use for early stopping (see sklearn.metrics for
+        available options). If None, no early stopping is done.
+    validation_split : int or float or None, optional(default=0.1)
+        Proportion (or absolute size) of training data to set aside as
+        validation data for early stopping. If None, early stopping is done on
+        the whole training data.
+    n_iter_no_change : int, optional (default=5)
+        Used to determine when to "early stop". The fitting process is
+        stopped when the score of the last iteration hasn't improved any of
+        the last ``n_iter_no_change`` iterations scores by at least ``tol``
+        percent.
+    tol : float or None optional (default=1e-7)
+        Tolerance (as a percentage) for comparing the last
+        ``n_iter_no_change`` scores. A higher tolerance leads to a higher
+        chance to early-stop.
+    verbose: int, optional (default=0)
         The verbosity level. If not zero, print some information about the
         fitting process.
     random_state : int, np.random.RandomStateInstance or None, \
-        optional(default=None)
-        TODO: any chance we can link to sklearn glossary?
+        optional (default=None)
+        Pseudo-random number generator to control the subsampling in the
+        binning process, and the train/validation data split if early stopping
+        is enabled. See
+        `scikit-learn glossary
+        <https://scikit-learn.org/stable/glossary.html#term-random-state>`_.
     """
 
     _VALID_LOSSES = ('least_squares',)
 
     def __init__(self, loss='least_squares', learning_rate=0.1, max_iter=100,
                  max_leaf_nodes=31, max_depth=None, min_samples_leaf=20,
-                 l2_regularization=0., max_bins=256, max_no_improvement=5,
-                 validation_split=0.1, scoring='neg_mean_squared_error',
-                 tol=1e-7, verbose=0, random_state=None):
+                 l2_regularization=0., max_bins=256,
+                 scoring='neg_mean_squared_error', validation_split=0.1,
+                 n_iter_no_change=5, tol=1e-7, verbose=0, random_state=None):
         super(GradientBoostingRegressor, self).__init__(
             loss=loss, learning_rate=learning_rate, max_iter=max_iter,
             max_leaf_nodes=max_leaf_nodes, max_depth=max_depth,
             min_samples_leaf=min_samples_leaf,
             l2_regularization=l2_regularization, max_bins=max_bins,
-            max_no_improvement=max_no_improvement,
-            validation_split=validation_split, scoring=scoring, tol=tol,
-            verbose=verbose, random_state=random_state)
+            scoring=scoring, validation_split=validation_split,
+            n_iter_no_change=n_iter_no_change, tol=tol, verbose=verbose,
+            random_state=random_state)
 
     def predict(self, X):
         """Predict values for X.
@@ -432,7 +471,24 @@ class GradientBoostingRegressor(BaseGradientBoostingMachine, RegressorMixin):
         """
         # Return raw predictions after converting shape
         # (n_samples, 1) to (n_samples,)
-        return self._raw_predict(X).ravel()
+        return self._raw_predict(X, binned=False).ravel()
+
+    def _predict_binned(self, X_binned):
+        """Predict values for binned data X.
+
+        Parameters
+        ----------
+        X_binned : array-like, shape=(n_samples, n_features)
+            The binned input samples. Entries should be integers.
+
+        Returns
+        -------
+        y : array, shape (n_samples,)
+            The predicted values.
+        """
+        # Return raw predictions after converting shape
+        # (n_samples, 1) to (n_samples,)
+        return self._raw_predict(X_binned, binned=True).ravel()
 
     def _encode_y(self, y):
         # Just convert y to float32
@@ -478,18 +534,31 @@ class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
         allows for a much faster training stage. Features with a small
         number of unique values may use less than ``max_bins`` bins. Must be no
         larger than 256.
-    max_no_improvement : int, optional(default=TODO)
-        TODO
-    validation_split : int or float, optional(default=TODO)
-        TODO
-    scoring : str, optional(default=TODO)
-        TODO
+    scoring : str or callable or None, optional (default='accuracy')
+        Scoring parameter to use for early stopping (see sklearn.metrics for
+        available options). If None, no early stopping is done.
+    validation_split : int or float or None, optional(default=0.1)
+        Proportion (or absolute size) of training data to set aside as
+        validation data for early stopping. If None, early stopping is done on
+        the whole training data.
+    n_iter_no_change : int, optional (default=5)
+        Used to determine when to "early stop". The fitting process is
+        stopped when the score of the last iteration hasn't improved any of
+        the last ``n_iter_no_change`` iterations scores by at least ``tol``
+        percent.
+    tol : float or None optional (default=1e-7)
+        Tolerance (as a percentage) for comparing the last
+        ``n_iter_no_change`` scores. A higher tolerance leads to a higher
+        chance to early-stop.
     verbose: int, optional(default=0)
         The verbosity level. If not zero, print some information about the
         fitting process.
     random_state : int, np.random.RandomStateInstance or None, \
         optional(default=None)
-        TODO: any chance we can link to sklearn glossary?
+        Pseudo-random number generator to control the subsampling in the
+        binning process, and the train/validation data split if early stopping
+        is enabled. See `scikit-learn glossary
+        <https://scikit-learn.org/stable/glossary.html#term-random-state>`_.
     """
 
     _VALID_LOSSES = ('binary_crossentropy', 'categorical_crossentropy',
@@ -497,17 +566,17 @@ class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
 
     def __init__(self, loss='auto', learning_rate=0.1, max_iter=100,
                  max_leaf_nodes=31, max_depth=None, min_samples_leaf=20,
-                 l2_regularization=0., max_bins=256, max_no_improvement=5,
-                 validation_split=0.1, scoring='neg_mean_squared_error',
-                 tol=1e-7, verbose=0, random_state=None):
+                 l2_regularization=0., max_bins=256, scoring='accuracy',
+                 validation_split=0.1, n_iter_no_change=5, tol=1e-7,
+                 verbose=0, random_state=None):
         super(GradientBoostingClassifier, self).__init__(
             loss=loss, learning_rate=learning_rate, max_iter=max_iter,
             max_leaf_nodes=max_leaf_nodes, max_depth=max_depth,
             min_samples_leaf=min_samples_leaf,
             l2_regularization=l2_regularization, max_bins=max_bins,
-            max_no_improvement=max_no_improvement,
-            validation_split=validation_split, scoring=scoring, tol=tol,
-            verbose=verbose, random_state=random_state)
+            scoring=scoring, validation_split=validation_split,
+            n_iter_no_change=n_iter_no_change, tol=tol, verbose=verbose,
+            random_state=random_state)
 
     def predict(self, X):
         """Predict classes for X.
@@ -541,6 +610,24 @@ class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
         """
         raw_predictions = self._raw_predict(X)
         return self.loss_.predict_proba(raw_predictions)
+
+    def _predict_binned(self, X_binned):
+        """Predict classes for binned data X.
+
+        Parameters
+        ----------
+        X_binned : array-like, shape=(n_samples, n_features)
+            The binned input samples. Entries should be integers.
+
+        Returns
+        -------
+        y : array, shape (n_samples,)
+            The predicted classes.
+        """
+        raw_predictions = self._raw_predict(X_binned, binned=True)
+        probas = self.loss_.predict_proba(raw_predictions)
+        encoded_classes = np.argmax(probas, axis=1)
+        return self.classes_[encoded_classes]
 
     def _encode_y(self, y):
         # encode classes into 0 ... n_classes - 1 and sets attributes classes_
