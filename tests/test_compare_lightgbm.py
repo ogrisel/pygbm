@@ -6,6 +6,10 @@ import pytest
 
 from pygbm import GradientBoostingRegressor, GradientBoostingClassifier
 from pygbm.binning import BinMapper
+from pygbm.utils import get_lightgbm_estimator
+
+
+pytest.importorskip("lightgbm")
 
 
 @pytest.mark.parametrize('seed', range(5))
@@ -32,8 +36,6 @@ def test_same_predictions_regression(seed, min_samples_leaf, n_samples,
     # - To ignore  discrepancies caused by small differences the binning
     #   strategy, data is pre-binned if n_samples > 255.
 
-    lb = pytest.importorskip("lightgbm")
-
     rng = np.random.RandomState(seed=seed)
     n_samples = n_samples
     max_iter = 1
@@ -47,18 +49,13 @@ def test_same_predictions_regression(seed, min_samples_leaf, n_samples,
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=rng)
 
-    est_lightgbm = lb.LGBMRegressor(n_estimators=max_iter,
-                                    min_data_in_bin=1,
-                                    max_bin=max_bins,
-                                    learning_rate=1,
-                                    min_data_in_leaf=min_samples_leaf,
-                                    num_leaves=max_leaf_nodes)
     est_pygbm = GradientBoostingRegressor(max_iter=max_iter,
                                           max_bins=max_bins,
                                           learning_rate=1,
                                           validation_split=None, scoring=None,
                                           min_samples_leaf=min_samples_leaf,
                                           max_leaf_nodes=max_leaf_nodes)
+    est_lightgbm = get_lightgbm_estimator(est_pygbm)
 
     est_lightgbm.fit(X_train, y_train)
     est_pygbm.fit(X_train, y_train)
@@ -85,8 +82,6 @@ def test_same_predictions_classification(seed, min_samples_leaf, n_samples,
                                          max_leaf_nodes):
     # Same as test_same_predictions_regression but for classification
 
-    lb = pytest.importorskip("lightgbm")
-
     rng = np.random.RandomState(seed=seed)
     n_samples = n_samples
     max_iter = 1
@@ -100,13 +95,6 @@ def test_same_predictions_classification(seed, min_samples_leaf, n_samples,
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=rng)
 
-    est_lightgbm = lb.LGBMClassifier(objective='binary',
-                                     n_estimators=max_iter,
-                                     min_data_in_bin=1,
-                                     max_bin=max_bins,
-                                     learning_rate=1,
-                                     min_data_in_leaf=min_samples_leaf,
-                                     num_leaves=max_leaf_nodes)
     est_pygbm = GradientBoostingClassifier(loss='binary_crossentropy',
                                            max_iter=max_iter,
                                            max_bins=max_bins,
@@ -115,6 +103,7 @@ def test_same_predictions_classification(seed, min_samples_leaf, n_samples,
                                            scoring=None,
                                            min_samples_leaf=min_samples_leaf,
                                            max_leaf_nodes=max_leaf_nodes)
+    est_lightgbm = get_lightgbm_estimator(est_pygbm)
 
     est_lightgbm.fit(X_train, y_train)
     est_pygbm.fit(X_train, y_train)
@@ -148,12 +137,11 @@ def test_same_predictions_multiclass_classification(
         seed, min_samples_leaf, n_samples, max_leaf_nodes):
     # Same as test_same_predictions_regression but for classification
 
-    lb = pytest.importorskip("lightgbm")
-
     rng = np.random.RandomState(seed=seed)
     n_samples = n_samples
     max_iter = 1
     max_bins = 256
+    lr = 1
 
     X, y = make_classification(n_samples=n_samples, n_classes=3, n_features=5,
                                n_informative=5, n_redundant=0,
@@ -164,18 +152,6 @@ def test_same_predictions_multiclass_classification(
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=rng)
 
-    # LightGBM multiplies the hessians by 2 so we need to double the learning
-    # rate. We could also do that for min_hessian_to_split.
-    lr = 1
-    lr_lightgbm = lr * 2
-
-    est_lightgbm = lb.LGBMClassifier(objective='multiclass',
-                                     n_estimators=max_iter,
-                                     min_data_in_bin=1,
-                                     max_bin=max_bins,
-                                     learning_rate=lr_lightgbm,
-                                     min_data_in_leaf=min_samples_leaf,
-                                     num_leaves=max_leaf_nodes)
     est_pygbm = GradientBoostingClassifier(loss='categorical_crossentropy',
                                            max_iter=max_iter,
                                            max_bins=max_bins,
@@ -184,6 +160,7 @@ def test_same_predictions_multiclass_classification(
                                            scoring=None,
                                            min_samples_leaf=min_samples_leaf,
                                            max_leaf_nodes=max_leaf_nodes)
+    est_lightgbm = get_lightgbm_estimator(est_pygbm)
 
     est_lightgbm.fit(X_train, y_train)
     est_pygbm.fit(X_train, y_train)
