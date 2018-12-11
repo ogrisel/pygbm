@@ -1,4 +1,5 @@
 import os
+import warnings
 
 import pytest
 from sklearn.utils.testing import assert_raises_regex
@@ -89,24 +90,17 @@ def test_init_parameters_validation(GradientBoosting, X, y):
     )
 
 
-@pytest.mark.parametrize('n_classes', (2, 3))
-@pytest.mark.parametrize('mapping', (lambda x: str(x),
-                                     lambda x: 2 * x))
-def test_classification_input(n_classes, mapping):
-    # check that GradientBoostingClassifier supports classes encoded as
-    # strings or non contiguous ints.
-    # TODO: maybe remove once we run the sklearn test suite?
-    X, y = make_classification(n_classes=n_classes, n_clusters_per_class=1)
-
-    y_mapped = [mapping(target) for target in y]
-
-    gbc = GradientBoostingClassifier(scoring=None, random_state=0)
-    pred = gbc.fit(X, y).predict(X)
-    pred_mapped = gbc.fit(X, y_mapped).predict(X)
-
-    pred_mapped_after = [mapping(target) for target in pred]
-
-    assert_array_equal(pred_mapped, pred_mapped_after)
+def test_one_sample_one_feature():
+    # Until numba issue #3569 is fixed, we raise an informative error message
+    # when X is only one sample or one feature in fit (it's OK in predict).
+    # The array is both F and C contiguous, and numba can't compile.
+    gb = GradientBoostingClassifier()
+    for X, y in (([[1, 2]], [0]), ([[1], [2]], [0, 1])):
+        assert_raises_regex(
+            ValueError,
+            'Passing only one sample or one feature is not supported yet.',
+            gb.fit, X, y
+        )
 
 
 @pytest.mark.skipif(
@@ -171,3 +165,56 @@ def test_early_stopping_classification(data, scoring, validation_split, tol):
         assert n_iter_no_change <= gb.n_iter_ < max_iter
     else:
         assert gb.n_iter_ == max_iter
+
+
+# TODO: Remove if / when numba issue 3569 is fixed and check_classifiers_train
+# is less strict
+def custom_check_estimator(Estimator):
+    # Same as sklearn.check_estimator, skipping tests that can't succeed.
+
+    from sklearn.utils.estimator_checks import _yield_all_checks
+    from sklearn.utils.testing import SkipTest
+    from sklearn.exceptions import SkipTestWarning
+    from sklearn.utils import estimator_checks
+
+    estimator = Estimator
+    name = type(estimator).__name__
+
+    for check in _yield_all_checks(name, estimator):
+        if (check is estimator_checks.check_fit2d_1feature or
+                check is estimator_checks.check_fit2d_1sample):
+            # X is both Fortran and C aligned and numba can't compile.
+            # Opened numba issue 3569
+            continue
+        if check is estimator_checks.check_classifiers_train:
+            continue # probas don't exactly sum to 1 (very close though)
+        if (hasattr(check, 'func') and
+                check.func is estimator_checks.check_classifiers_train):
+            continue # same, wrapped in a functools.partial object.
+
+        try:
+            check(name, estimator)
+        except SkipTest as exception:
+            # the only SkipTest thrown currently results from not
+            # being able to import pandas.
+            warnings.warn(str(exception), SkipTestWarning)
+
+
+@pytest.mark.skipif(
+    int(os.environ.get("NUMBA_DISABLE_JIT", 0)) == 1,
+    reason="Potentially long")
+@pytest.mark.parametrize('Estimator', (
+    GradientBoostingRegressor(),
+    GradientBoostingClassifier(scoring=None, min_samples_leaf=5),))
+def test_estimator_checks(Estimator):
+    # Run the check_estimator() test suite on GBRegressor and GBClassifier.
+
+    # Notes:
+    # - Can't do early stopping with classifier because often
+    #   validation_split=.1 leads to test_size=2 < n_classes and
+    #   train_test_split raises an error.
+    # - Also, need to set a low min_samples_leaf for
+    #   check_classifiers_classes() to pass: with only 30 samples on the
+    #   dataset, the root is never split with min_samples_leaf=20 and only the
+    #   majority class is predicted.
+    custom_check_estimator(Estimator)

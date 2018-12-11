@@ -7,11 +7,12 @@ import numpy as np
 from numba import njit, prange
 from time import time
 from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
-from sklearn.utils import check_X_y, check_random_state
+from sklearn.utils import check_X_y, check_random_state, check_array
+from sklearn.utils.validation import check_is_fitted
+from sklearn.utils.multiclass import check_classification_targets
 from sklearn.metrics import check_scoring
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from sklearn.utils.validation import check_is_fitted
 
 from pygbm.binning import BinMapper
 from pygbm.grower import TreeGrower
@@ -96,9 +97,15 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         # TODO: test input checking
         X, y = check_X_y(X, y, dtype=[np.float32, np.float64])
         y = self._encode_y(y)
+        if X.shape[0] == 1 or X.shape[1] == 1:
+            raise ValueError(
+                'Passing only one sample or one feature is not supported yet. '
+                'See numba issue #3569.'
+            )
         rng = check_random_state(self.random_state)
 
         self._validate_parameters()
+        self.n_features_ = X.shape[1]  # used for validation in predict()
 
         if self.verbose:
             print(f"Binning {X.nbytes / 1e9:.3f} GB of data: ", end="",
@@ -114,13 +121,20 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
 
         self.loss_ = self._get_loss()
 
-        if self.validation_split is not None:
+        if self.scoring is not None and self.validation_split is not None:
             # stratify for classification
             stratify = y if hasattr(self.loss_, 'predict_proba') else None
 
             X_binned_train, X_binned_val, y_train, y_val = train_test_split(
                 X_binned, y, test_size=self.validation_split,
                 stratify=stratify, random_state=rng)
+            if X_binned_train.size == 0 or X_binned_val.size == 0:
+                raise ValueError(
+                    f'Not enough data (n_samples={X_binned.shape[0]}) to '
+                    f'perform early stopping with validation_split='
+                    f'{self.validation_split}. Use more training data or '
+                    f'adjust validation_split.'
+                )
             # Histogram computation is faster on feature-aligned data.
             X_binned_train = np.asfortranarray(X_binned_train)
         else:
@@ -350,7 +364,13 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         raw_predictions : array, shape (n_samples * n_trees_per_iteration,)
             The raw predicted values.
         """
-        # TODO: check input / check_fitted
+        X = check_array(X)
+        check_is_fitted(self, 'predictors_')
+        if X.shape[1] != self.n_features_:
+            raise ValueError(
+                f'X has {X.shape[1]} features but this estimator was '
+                f'trained with {self.n_features_} features.'
+            )
         n_samples = X.shape[0]
         raw_predictions = np.zeros(
             shape=(n_samples, self.n_trees_per_iteration_),
@@ -632,6 +652,8 @@ class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
     def _encode_y(self, y):
         # encode classes into 0 ... n_classes - 1 and sets attributes classes_
         # and n_trees_per_iteration_
+        check_classification_targets(y)
+
         label_encoder = LabelEncoder()
         encoded_y = label_encoder.fit_transform(y)
         self.classes_ = label_encoder.classes_
