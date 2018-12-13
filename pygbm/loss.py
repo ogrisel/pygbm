@@ -9,7 +9,8 @@ from abc import ABC, abstractmethod
 from scipy.special import expit, logsumexp
 import numpy as np
 from numba import njit, prange
-import numba
+
+from .utils import get_threads_chunks
 
 
 @njit
@@ -27,21 +28,6 @@ def _logsumexp(a):
 
     s = np.sum(np.exp(a - a_max))
     return np.log(s) + a_max
-
-
-@njit
-def _get_threads_chunks(total_size):
-    # Divide [0, total_size - 1] into n_threads contiguous regions, and
-    # returns the starts and ends of each region. Used to simulate a 'static'
-    # scheduling.
-    n_threads = numba.config.NUMBA_DEFAULT_NUM_THREADS
-    sizes = np.full(n_threads, total_size // n_threads, dtype=np.int32)
-    sizes[:total_size % n_threads] += 1
-    starts = np.zeros(n_threads, dtype=np.int32)
-    starts[1:] = np.cumsum(sizes[:-1])
-    ends = starts + sizes
-
-    return starts, ends, n_threads
 
 
 @njit(fastmath=True)
@@ -141,7 +127,7 @@ def _update_gradients_least_squares(gradients, y_true, raw_predictions):
     # return a view.
     raw_predictions = raw_predictions.reshape(-1)
     n_samples = raw_predictions.shape[0]
-    starts, ends, n_threads = _get_threads_chunks(total_size=n_samples)
+    starts, ends, n_threads = get_threads_chunks(total_size=n_samples)
     for thread_idx in prange(n_threads):
         for i in range(starts[thread_idx], ends[thread_idx]):
             # Note: a more correct exp is 2 * (raw_predictions - y_true) but
@@ -198,7 +184,7 @@ def _update_gradients_hessians_binary_crossentropy(gradients, hessians,
     # return a view.
     raw_predictions = raw_predictions.reshape(-1)
     n_samples = raw_predictions.shape[0]
-    starts, ends, n_threads = _get_threads_chunks(total_size=n_samples)
+    starts, ends, n_threads = get_threads_chunks(total_size=n_samples)
     for thread_idx in prange(n_threads):
         for i in range(starts[thread_idx], ends[thread_idx]):
             gradients[i] = _expit(raw_predictions[i]) - y_true[i]
@@ -253,7 +239,7 @@ def _update_gradients_hessians_categorical_crossentropy(
     # not get partially overwritten at the end of the loop when
     # _update_y_pred() is called (see sklearn PR 12715)
     n_samples, n_trees_per_iteration = raw_predictions.shape
-    starts, ends, n_threads = _get_threads_chunks(total_size=n_samples)
+    starts, ends, n_threads = get_threads_chunks(total_size=n_samples)
     for k in range(n_trees_per_iteration):
         gradients_at_k = gradients[n_samples * k:n_samples * (k + 1)]
         hessians_at_k = hessians[n_samples * k:n_samples * (k + 1)]
