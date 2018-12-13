@@ -6,41 +6,29 @@
 Welcome to pygbm's documentation!
 =================================
 
-.. .. toctree::
-..    :maxdepth: 2
-..    :caption: API Reference
-..    :hidden:
-
-Gradient Boosting Estimators
-============================
-
-.. automodule:: pygbm.gradient_boosting
-    :members:
-    :exclude-members: BaseGradientBoostingMachine
-
-Grower
-======
-
-.. automodule:: pygbm.grower
-    :members:
-
-Splitting
-=========
-
-.. automodule:: pygbm.splitting
-    :members:
-
-Binning
-=======
-
-.. automodule:: pygbm.binning
-    :members:
+.. warning::
+    Pygbm's API and default values are likely to be changed in future
+    version, without any deprecation cycle.
 
 
+.. toctree::
+   :maxdepth: 2
+   :caption: Estimator API
+   :hidden:
 
-.. Indices and tables
-.. ==================
+   public_api
 
-.. * :ref:`genindex`
-.. * :ref:`modindex`
-.. * :ref:`search`
+.. toctree::
+   :maxdepth: 2
+   :caption: Private API
+   :hidden:
+
+   private_api
+
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`

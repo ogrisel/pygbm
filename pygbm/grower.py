@@ -1,7 +1,8 @@
 """
-This module contains the TreeGrower class which builds a regression tree
-fitting a Newton-Raphson step, based on the gradients and hessians of the
-training data.
+This module contains the TreeGrower class.
+
+TreeGrowee builds a regression tree fitting a Newton-Raphson step, based on
+the gradients and hessians of the training data.
 """
 from heapq import heappush, heappop
 import numpy as np
@@ -25,9 +26,9 @@ class TreeNode:
     samples_indices : array of int
         The indices of the samples at the node
     sum_gradients : float
-        The sum of the gradients of the samples at the nodes
+        The sum of the gradients of the samples at the node
     sum_hessians : float
-        The sum of the hessians of the samples at the nodes
+        The sum of the hessians of the samples at the node
     parent : TreeNode or None, optional(default=None)
         The parent of the node. None for root.
 
@@ -38,9 +39,9 @@ class TreeNode:
     samples_indices : array of int
         The indices of the samples at the node
     sum_gradients : float
-        The sum of the gradients of the samples at the nodes
+        The sum of the gradients of the samples at the node
     sum_hessians : float
-        The sum of the hessians of the samples at the nodes
+        The sum of the hessians of the samples at the node
     parent : TreeNode or None, optional(default=None)
         The parent of the node. None for root.
     split_info : SplitInfo or None
@@ -130,12 +131,13 @@ class TreeGrower:
     hessians : array-like, shape=(n_samples,)
         The hessians of each training sample. Those are the hessians of the
         loss w.r.t the predictions, evaluated at iteration ``i - 1``.
-    max_leaf_nodes : int, optional(default=TODO)
-        The maximum number of leaves for each tree.
-    max_depth : int, optional(default=TODO)
+    max_leaf_nodes : int or None, optional(default=None)
+        The maximum number of leaves for each tree. If None, there is no
+        maximum limit.
+    max_depth : int or None, optional(default=None)
         The maximum depth of each tree. The depth of a tree is the number of
         nodes to go from the root to the deepest leaf.
-    min_samples_leaf : int, optional(default=TODO)
+    min_samples_leaf : int, optional(default=20)
         The minimum number of samples per leaf.
     min_gain_to_split : float, optional(default=0.)
         The minimum gain needed to split a node. Splits with lower gain will
@@ -148,13 +150,13 @@ class TreeGrower:
         equal to ``max_bins``. If it's an int, all features are considered to
         have the same number of bins. If None, all features are considered to
         have ``max_bins`` bins.
-    l2_regularization : float, optional(default=TODO)
+    l2_regularization : float, optional(default=0)
         The L2 regularization parameter.
-    min_hessian_to_split : float, optional(default=TODO)
+    min_hessian_to_split : float, optional(default=1e-3)
         The minimum sum of hessians needed in each node. Splits that result in
         at least one child having a sum of hessians less than
         min_hessian_to_split are discarded.
-    shrinkage : float, optional(default=TODO)
+    shrinkage : float, optional(default=1)
         The shrinkage parameter to apply to the leaves values, also known as
         learning rate.
     """

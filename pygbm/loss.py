@@ -1,3 +1,9 @@
+"""
+This module contains the loss classes.
+
+Specific losses are used for regression, binary classification or multiclass
+classification.
+"""
 from abc import ABC, abstractmethod
 
 from scipy.special import expit, logsumexp
@@ -6,13 +12,14 @@ from numba import njit, prange
 import numba
 
 
-# TODO: Write proper docstrings
-
 @njit
 def _logsumexp(a):
-    # custom logsumexp function with numerical stability, based on scipy's
-    # logsumexp which is unfortunately not supported (neither is
-    # np.logaddexp.reduce). Only supports 1d arrays.
+    """logsumexp(x) = log(sum(exp(x)))
+
+    Custom logsumexp function with numerical stability, based on scipy's
+    logsumexp which is unfortunately not supported (neither is
+    np.logaddexp.reduce, which is equivalent). Only supports 1d arrays.
+    """
 
     a_max = np.amax(a)
     if not np.isfinite(a_max):
@@ -43,9 +50,31 @@ def _expit(x):
     return 1 / (1 + np.exp(-x))
 
 
-class Loss(ABC):
+class BaseLoss(ABC):
+    """Base class for a loss."""
 
     def init_gradients_and_hessians(self, n_samples, n_trees_per_iteration):
+        """Return initial gradients and hessians.
+
+        Unless hessians are constant, arrays are initialized with undefined
+        values.
+
+        Parameters
+        ----------
+        n_samples : int
+            The number of samples passed to `fit()`
+        n_trees_per_iteration : int
+            The number of trees built at each iteration. Equals 1 for
+            regression and binary classification, or K where K is the number of
+            classes for multiclass classification.
+
+        Returns
+        -------
+        gradients : array-like, shape=(n_samples * n_trees_per_iteration)
+        hessians : array-like, shape=(n_samples * n_trees_per_iteration).
+            If hessians are constant (e.g. for ``LeastSquares`` loss, shape
+            is (1,) and the array is initialized to ``1``.
+        """
         shape = n_samples * n_trees_per_iteration
         gradients = np.empty(shape=shape, dtype=np.float32)
         if self.hessian_is_constant:
@@ -58,10 +87,35 @@ class Loss(ABC):
     @abstractmethod
     def update_gradients_and_hessians(self, gradients, hessians, y_true,
                                       raw_predictions):
+        """Update gradients and hessians arrays, inplace.
+
+        The gradients (resp. hessians) are the first (resp. second) order
+        derivatives of the loss for each sample with respect to the
+        predictions of model, evaluated at iteration ``i - 1``.
+
+        Parameters
+        ----------
+        gradients : array-like, shape=(n_samples * n_trees_per_iteration)
+            The gradients (treated as OUT array).
+        hessians : array-like, shape=(n_samples * n_trees_per_iteration) or \
+            (1,)
+            The hessians (treated as OUT array).
+        y_true : array-like, shape=(n_samples,)
+            The true target values or each training sample.
+        raw_predictions : array-like, shape=(n_samples, n_trees_per_iteration)
+            The raw_predictions (i.e. values from the trees) of the tree
+            ensemble at iteration ``i - 1``.
+        """
         pass
 
 
-class LeastSquares(Loss):
+class LeastSquares(BaseLoss):
+    """Least squares loss, for regression.
+
+    For a given sample x_i, least squares loss is defined as::
+
+        loss(x_i) = (y_true_i - raw_pred_i)**2
+    """
 
     hessian_is_constant = True
 
@@ -96,7 +150,16 @@ def _update_gradients_least_squares(gradients, y_true, raw_predictions):
             gradients[i] = raw_predictions[i] - y_true[i]
 
 
-class BinaryCrossEntropy(Loss):
+class BinaryCrossEntropy(BaseLoss):
+    """Binary cross-entropy loss, for binary classification.
+
+    For a given sample x_i, the binary cross-entropy loss is defined as the
+    negative log-likelihood of the model which can be expressed as::
+
+        loss(x_i) = log(1 + exp(raw_pred_i)) - y_true_i * raw_pred_i
+
+    See The Elements of Statistical Learning, by Hastie, Tibshirani, Friedman.
+    """
 
     hessian_is_constant = False
     inverse_link_function = staticmethod(expit)
@@ -143,7 +206,13 @@ def _update_gradients_hessians_binary_crossentropy(gradients, hessians,
             hessians[i] = gradient_abs * (1. - gradient_abs)
 
 
-class CategoricalCrossEntropy(Loss):
+class CategoricalCrossEntropy(BaseLoss):
+    """Categorical cross-entropy loss, for multiclass classification.
+
+    For a given sample x_i, the categorical cross-entropy loss is defined as
+    the negative log-likelihood of the model and generalizes the binary
+    cross-entropy to more than 2 classes.
+    """
 
     hessian_is_constant = False
 

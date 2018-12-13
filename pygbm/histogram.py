@@ -1,3 +1,9 @@
+"""This module contains njitted routines for building histograms.
+
+A histogram is an array with n_bins entry of type HISTOGRAM_DTYPE. Each
+feature has its own histogram. A histogram contains the sum of gradients and
+hessians of all the samples belonging to each bin.
+"""
 import numpy as np
 from numba import njit
 
@@ -11,6 +17,7 @@ HISTOGRAM_DTYPE = np.dtype([
 @njit
 def _build_histogram_naive(n_bins, sample_indices, binned_feature,
                            ordered_gradients, ordered_hessians):
+    """Build histogram in a naive way, without optimizing for cache hit."""
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     for i, sample_idx in enumerate(sample_indices):
         bin_idx = binned_feature[sample_idx]
@@ -41,6 +48,7 @@ def _subtract_histograms(n_bins, hist_a, hist_b):
 @njit
 def _build_histogram(n_bins, sample_indices, binned_feature, ordered_gradients,
                      ordered_hessians):
+    """Return histogram for a given feature."""
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     n_node_samples = sample_indices.shape[0]
     unrolled_upper = (n_node_samples // 4) * 4
@@ -78,6 +86,10 @@ def _build_histogram(n_bins, sample_indices, binned_feature, ordered_gradients,
 @njit
 def _build_histogram_no_hessian(n_bins, sample_indices, binned_feature,
                                 ordered_gradients):
+    """Return histogram for a given feature.
+
+    Hessians are not updated (used when hessians are constant).
+    """
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     n_node_samples = sample_indices.shape[0]
     unrolled_upper = (n_node_samples // 4) * 4
@@ -110,9 +122,11 @@ def _build_histogram_no_hessian(n_bins, sample_indices, binned_feature,
 def _build_histogram_root_no_hessian(n_bins, binned_feature, all_gradients):
     """Special case for the root node
 
-    The root node has to find the a split among all the samples from the
+    The root node has to find the split among all the samples from the
     training set. binned_feature and all_gradients already have a consistent
     ordering.
+
+    Hessians are not updated (used when hessians are constant)
     """
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     n_node_samples = binned_feature.shape[0]
@@ -147,9 +161,9 @@ def _build_histogram_root(n_bins, binned_feature, all_gradients,
                           all_hessians):
     """Special case for the root node
 
-    The root node has to find the a split among all the samples from the
-    training set. binned_feature and all_gradients already have a consistent
-    ordering.
+    The root node has to find the split among all the samples from the
+    training set. binned_feature and all_gradients and all_hessians already
+    have a consistent ordering.
     """
     histogram = np.zeros(n_bins, dtype=HISTOGRAM_DTYPE)
     n_node_samples = binned_feature.shape[0]

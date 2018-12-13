@@ -1,5 +1,8 @@
+"""
+This module contains the TreePredictor class which is used for prediction.
+"""
 import numpy as np
-from numba import njit, from_dtype, prange
+from numba import njit, prange
 
 
 PREDICTOR_RECORD_DTYPE = np.dtype([
@@ -15,26 +18,60 @@ PREDICTOR_RECORD_DTYPE = np.dtype([
     ('depth', np.uint32),
     # TODO: shrinkage in leaf for feature importance error bar?
 ])
-PREDICTOR_NUMBA_TYPE = from_dtype(PREDICTOR_RECORD_DTYPE)[::1]
 
 
 class TreePredictor:
+    """Tree class used for predictions.
+
+    Parameters
+    ----------
+    nodes : list of PREDICTOR_RECORD_DTYPE.
+        The nodes of the tree.
+    """
     def __init__(self, nodes):
         self.nodes = nodes
 
     def get_n_leaf_nodes(self):
+        """Return number of leaves."""
         return int(self.nodes['is_leaf'].sum())
 
     def get_max_depth(self):
+        """Return maximum depth among all leaves."""
         return int(self.nodes['depth'].max())
 
     def predict_binned(self, binned_data, out=None):
+        """Predict raw values for binned data.
+
+        Parameters
+        ----------
+        binned_data : array-like of np.uint8, shape=(n_samples, n_features)
+            The binned input samples.
+        out : array-like, shape=(n_samples,), optional (default=None)
+            If not None, predictions will be written inplace in ``out``.
+
+        Returns
+        -------
+        y : array, shape (n_samples,)
+            The raw predicted values.
+        """
         if out is None:
             out = np.empty(binned_data.shape[0], dtype=np.float32)
         _predict_binned(self.nodes, binned_data, out)
         return out
 
     def predict(self, X):
+        """Predict raw values for non-binned data.
+
+        Parameters
+        ----------
+        X : array-like, shape=(n_samples, n_features)
+            The input samples.
+
+        Returns
+        -------
+        y : array, shape (n_samples,)
+            The raw predicted values.
+        """
         # TODO: introspect X to dispatch to numerical or categorical data
         # (dense or sparse) on a feature by feature basis.
         out = np.empty(X.shape[0], dtype=np.float32)

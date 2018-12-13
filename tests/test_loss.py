@@ -9,11 +9,13 @@ from pygbm.loss import _logsumexp
 
 
 def get_derivatives_helper(loss):
-    """Helper that returns get_gradients() and get_hessians() functions for
-    a given loss. Loss classes used to have get_gradients() and
+    """Return get_gradients() and get_hessians() functions for a given loss.
+
+    Loss classes used to have get_gradients() and
     get_hessians() methods, but now the update is done inplace in
     update_gradient_and_hessians(). This helper is used to keep the tests
-    almost unchanged."""
+    almost unchanged.
+    """
 
     def get_gradients(y_true, raw_predictions):
         # create gradients and hessians array, update inplace, and return

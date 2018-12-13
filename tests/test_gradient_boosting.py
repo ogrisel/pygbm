@@ -4,7 +4,6 @@ import warnings
 import pytest
 from sklearn.utils.testing import assert_raises_regex
 from sklearn.datasets import make_classification, make_regression
-from numpy.testing import assert_array_equal
 
 from pygbm import GradientBoostingClassifier
 from pygbm import GradientBoostingRegressor
@@ -187,10 +186,10 @@ def custom_check_estimator(Estimator):
             # Opened numba issue 3569
             continue
         if check is estimator_checks.check_classifiers_train:
-            continue # probas don't exactly sum to 1 (very close though)
+            continue  # probas don't exactly sum to 1 (very close though)
         if (hasattr(check, 'func') and
                 check.func is estimator_checks.check_classifiers_train):
-            continue # same, wrapped in a functools.partial object.
+            continue  # same, wrapped in a functools.partial object.
 
         try:
             check(name, estimator)

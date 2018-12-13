@@ -6,7 +6,7 @@ import pygbm
 
 def plot_tree(est_or_grower, est_lightgbm=None, tree_index=0, view=True,
               **kwargs):
-    """Plot the i'th predictor tree of a GBM or a grower tree
+    """Plot the i'th predictor tree of an estimator, or a grower's tree
 
     est_or_grower can either be a GradientBoostingMachine instance or a
     TreeGrower. In this latter case tree_index is ignored, and more debugging
@@ -14,9 +14,10 @@ def plot_tree(est_or_grower, est_lightgbm=None, tree_index=0, view=True,
     profiling information that are not kept in the predictor trees that
     result from fitting a GradientBoostingMachine.
 
-    tree_index corresponds to the ith built tree. In a multiclass setting,
-    e.g. with 3 classes, tree_index=5 will print the third tree of the
-    second iteration.
+    tree_index corresponds to the ith built tree. In a multiclass setting, the
+    ith tree isn't necessarily the tree built durint the ith iteration because
+    there are K trees per iteration. For example with 3 classes,
+    tree_index=5 will print the third tree of the second iteration.
 
     Can also plot a LightGBM estimator (on the left) for comparison.
 
