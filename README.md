@@ -10,7 +10,7 @@ while staying in pure Python using the [numba](http://numba.pydata.org/)
 jit compiler.
 
 pygbm provides a set of scikit-learn compatible estimator classes that
-should play well with the scikit-learn `Pipeline`s and model selection
+should play well with the scikit-learn `Pipeline` and model selection
 tools (grid search and randomized hyperparameter search).
 
 Longer term plans include integration with dask and dask-ml for
