@@ -1,7 +1,6 @@
 # pygbm [![Build Status](https://travis-ci.org/ogrisel/pygbm.svg?branch=master)](https://travis-ci.org/ogrisel/pygbm) [![codecov](https://codecov.io/gh/ogrisel/pygbm/branch/master/graph/badge.svg)](https://codecov.io/gh/ogrisel/pygbm)
 
 
-
 Experimental Gradient Boosting Machines in Python.
 
 The goal of this project is to evaluate whether it's possible to
@@ -10,13 +9,28 @@ Gradient Boosting Trees (possibly with all the LightGBM optimizations)
 while staying in pure Python using the [numba](http://numba.pydata.org/)
 jit compiler.
 
-We plan scikit-learn compatible set of estimator classes and possibly
-integration with dask and dask-ml for out-of-core and distributed
-fitting on a cluster.
+pygbm provides a set of scikit-learn compatible estimator classes that
+should play well with the scikit-learn `Pipeline`s and model selection
+tools (grid search and randomized hyperparameter search).
+
+Longer term plans include integration with dask and dask-ml for
+out-of-core and distributed fitting on a cluster.
+
+## Documentation
+
+The API documentation is available at:
+
+https://pygbm.readthedocs.io/
+
+You might also what to have a look at the `examples/` folder of this repo.
 
 ## Status
 
-This is unusable / under development.
+The project is experimental. The API is subject to change without deprecation notice. Use at your own risk.
+
+We welcome any feedback in the github issue tracker:
+
+https://github.com/ogrisel/pygbm/issues
 
 ## Running the development version
 
