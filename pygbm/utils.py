@@ -2,8 +2,6 @@
 import numpy as np
 from numba import njit
 from numba import config as numba_config
-from lightgbm import LGBMRegressor
-from lightgbm import LGBMClassifier
 
 
 def get_lightgbm_estimator(pygbm_estimator):
@@ -12,6 +10,8 @@ def get_lightgbm_estimator(pygbm_estimator):
     This utility function takes care of renaming the PyGBM parameters into
     their LightGBM equivalent parameters.
     """
+    from lightgbm import LGBMRegressor
+    from lightgbm import LGBMClassifier
 
     # Import here to avoid cyclic dependencies
     from .gradient_boosting import GradientBoostingClassifier
