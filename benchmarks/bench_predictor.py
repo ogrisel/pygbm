@@ -9,8 +9,8 @@ from pygbm import GradientBoostingRegressor
 n_samples = int(5e6)
 
 X, y = make_regression(n_samples=n_samples, n_features=5)
-est = GradientBoostingRegressor(scoring=None, validation_split=None,
-                                random_state=0)
+est = GradientBoostingRegressor(max_iter=1, scoring=None,
+                                validation_split=None, random_state=0)
 est.fit(X, y)
 predictor = est.predictors_[0][0]
 
@@ -34,7 +34,7 @@ scores_binned_f = predictor.predict_binned(X_binned)
 toc = time()
 duration = toc - tic
 speed = n_samples / duration
-print(f"done in {duration:.4f}s    {data_size / duration / 1e6:.3} MB/s    "
+print(f"done in {duration:.4f}s    {data_size / duration / 1e6:.3f} MB/s    "
       f"{speed:.3e} sample/s")
 
 print("Computing predictions (C-contiguous binned data)...")
@@ -43,7 +43,7 @@ scores_binned_c = predictor.predict_binned(X_binned_c)
 toc = time()
 duration = toc - tic
 speed = n_samples / duration
-print(f"done in {duration:.4f}s    {data_size / duration / 1e6:.3} MB/s    "
+print(f"done in {duration:.4f}s    {data_size / duration / 1e6:.3f} MB/s    "
       f"{speed:.3e} sample/s")
 
 assert_allclose(scores_binned_f, scores_binned_c)
@@ -56,7 +56,7 @@ scores_f = predictor.predict(X_f)
 toc = time()
 duration = toc - tic
 speed = n_samples / duration
-print(f"done in {duration:.4f}s    {data_size / duration / 1e6:.3} MB/s    "
+print(f"done in {duration:.4f}s    {data_size / duration / 1e6:.3f} MB/s    "
       f"{speed:.3e} sample/s")
 
 assert_allclose(scores_binned_f, scores_f)
@@ -68,7 +68,7 @@ scores_c = predictor.predict(X)
 toc = time()
 duration = toc - tic
 speed = n_samples / duration
-print(f"done in {duration:.4f}s    {data_size / duration / 1e6:.3} MB/s    "
+print(f"done in {duration:.4f}s    {data_size / duration / 1e6:.3f} MB/s    "
       f"{speed:.3e} sample/s")
 
 assert_allclose(scores_binned_f, scores_c)
