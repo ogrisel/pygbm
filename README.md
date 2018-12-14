@@ -57,15 +57,15 @@ To profile the benchmarks, you can use
 HTML report:
 
     pip install snakeviz
-    python -m cProfile -o bench_grower.prof benchmarks/bench_grower.py
-    snakeviz bench_grower.prof
+    python -m cProfile -o bench_higgs_boson.prof benchmarks/bench_higgs_boson.py
+    snakeviz bench_higgs_boson.prof
 
 ### Debugging numba type inference
 
 To introspect the results of type inference steps in the numba sections
 called by a given benchmarking script:
 
-    numba --annotate-html bench_grower.html benchmarks/bench_grower.py
+    numba --annotate-html bench_higgs_boson.html benchmarks/bench_higgs_boson.py
 
 In particular it is interesting to check that the numerical variables in
 the hot loops highlighted by the snakeviz profiling report have the
