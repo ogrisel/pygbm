@@ -140,8 +140,8 @@ def test_early_stopping_regression(scoring, validation_split, tol):
     make_classification(n_classes=3, n_clusters_per_class=1, random_state=0)
 ))
 @pytest.mark.parametrize('scoring, validation_split, tol', [
-    ('accuracy', .1, .01),
-    ('accuracy', None, .1),
+    ('accuracy', .1, 1e-7),
+    ('accuracy', None, 1e-7),
     (None, None, None),  # no early stopping
 ])
 def test_early_stopping_classification(data, scoring, validation_split, tol):
@@ -164,6 +164,32 @@ def test_early_stopping_classification(data, scoring, validation_split, tol):
         assert n_iter_no_change <= gb.n_iter_ < max_iter
     else:
         assert gb.n_iter_ == max_iter
+
+
+def test_should_stop():
+
+    def should_stop(scores, n_iter_no_change, tol):
+        gbdt = GradientBoostingClassifier(n_iter_no_change=n_iter_no_change,
+                                          tol=tol)
+        return gbdt._should_stop(scores)
+
+    # not enough iterations
+    assert not should_stop([], n_iter_no_change=1, tol=0.001)
+
+    assert not should_stop([1, 1, 1], n_iter_no_change=5, tol=0.001)
+    assert not should_stop([1] * 5, n_iter_no_change=5, tol=0.001)
+
+    # still making significant progress up to tol
+    assert not should_stop([1, 2, 3, 4, 5, 6], n_iter_no_change=5, tol=0.001)
+    assert not should_stop([1, 2, 3, 4, 5, 6], n_iter_no_change=5, tol=0.)
+    assert not should_stop([1, 2, 3, 4, 5, 6], n_iter_no_change=5, tol=0.999)
+    assert not should_stop([1, 2, 3, 4, 5, 6], n_iter_no_change=5,
+                           tol=5 - 1e-5)
+
+    # no significant progress according to tol
+    assert should_stop([1] * 6, n_iter_no_change=5, tol=0.)
+    assert should_stop([1] * 6, n_iter_no_change=5, tol=0.001)
+    assert should_stop([1, 2, 3, 4, 5, 6], n_iter_no_change=5, tol=5)
 
 
 # TODO: Remove if / when numba issue 3569 is fixed and check_classifiers_train

@@ -60,6 +60,9 @@ def test_same_predictions_regression(seed, min_samples_leaf, n_samples,
     est_lightgbm.fit(X_train, y_train)
     est_pygbm.fit(X_train, y_train)
 
+    # We need X to be treated an numerical data, not pre-binned data.
+    X_train, X_test = X_train.astype(np.float32), X_test.astype(np.float32)
+
     pred_lgbm = est_lightgbm.predict(X_train)
     pred_pygbm = est_pygbm.predict(X_train)
     # less than 1% of the predictions are different up to the 3rd decimal
@@ -107,6 +110,9 @@ def test_same_predictions_classification(seed, min_samples_leaf, n_samples,
 
     est_lightgbm.fit(X_train, y_train)
     est_pygbm.fit(X_train, y_train)
+
+    # We need X to be treated an numerical data, not pre-binned data.
+    X_train, X_test = X_train.astype(np.float32), X_test.astype(np.float32)
 
     pred_lightgbm = est_lightgbm.predict(X_train)
     pred_pygbm = est_pygbm.predict(X_train)
@@ -164,6 +170,9 @@ def test_same_predictions_multiclass_classification(
 
     est_lightgbm.fit(X_train, y_train)
     est_pygbm.fit(X_train, y_train)
+
+    # We need X to be treated an numerical data, not pre-binned data.
+    X_train, X_test = X_train.astype(np.float32), X_test.astype(np.float32)
 
     pred_lightgbm = est_lightgbm.predict(X_train)
     pred_pygbm = est_pygbm.predict(X_train)
