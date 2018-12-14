@@ -1,17 +1,17 @@
-# pygbm [![Build Status](https://travis-ci.org/ogrisel/pygbm.svg?branch=master)](https://travis-ci.org/ogrisel/pygbm) [![codecov](https://codecov.io/gh/ogrisel/pygbm/branch/master/graph/badge.svg)](https://codecov.io/gh/ogrisel/pygbm)
+# pygbm [![Build Status](https://travis-ci.org/ogrisel/pygbm.svg?branch=master)](https://travis-ci.org/ogrisel/pygbm) [![codecov](https://codecov.io/gh/ogrisel/pygbm/branch/master/graph/badge.svg)](https://codecov.io/gh/ogrisel/pygbm) [![python versions](https://img.shields.io/badge/python-3.6+-blue.svg)](https://github.com/ogrisel/pygbm)
+
 
 
 Experimental Gradient Boosting Machines in Python.
 
-The goal of this project is to evaluate whether it's possible to
-implement a pure Python yet efficient version histogram-binning of
-Gradient Boosting Trees (possibly with all the LightGBM optimizations)
-while staying in pure Python using the [numba](http://numba.pydata.org/)
-jit compiler.
+The goal of this project is to evaluate whether it's possible to implement a
+pure Python yet efficient version histogram-binning of Gradient Boosting
+Trees (possibly with all the LightGBM optimizations) while staying in pure
+Python 3.6+ using the [numba](http://numba.pydata.org/) jit compiler.
 
 pygbm provides a set of scikit-learn compatible estimator classes that
-should play well with the scikit-learn `Pipeline` and model selection
-tools (grid search and randomized hyperparameter search).
+should play well with the scikit-learn `Pipeline` and model selection tools
+(grid search and randomized hyperparameter search).
 
 Longer term plans include integration with dask and dask-ml for
 out-of-core and distributed fitting on a cluster.
@@ -22,13 +22,15 @@ The project is available on PyPI and can be installed with `pip`:
 
     pip install pygbm
 
+You'll need Python 3.6 at least.
+
 ## Documentation
 
 The API documentation is available at:
 
 https://pygbm.readthedocs.io/
 
-You might also what to have a look at the `examples/` folder of this repo.
+You might also want to have a look at the `examples/` folder of this repo.
 
 ## Status
 
@@ -94,3 +96,9 @@ variable. For instance try:
 vs:
 
     NUMBA_NUM_THREADS=4 python benchmarks/bench_binning.py
+
+
+## Acknowledgements
+
+The work from Nicolas Hug is supported by the National Science Foundation
+under Grant No. 1740305 and by DARPA under Grant No. DARPA-BAA-16-51
