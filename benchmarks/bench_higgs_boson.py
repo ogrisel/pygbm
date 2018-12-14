@@ -11,7 +11,6 @@ from sklearn.metrics import accuracy_score, roc_auc_score
 from joblib import Memory
 from pygbm import GradientBoostingClassifier
 from pygbm.utils import get_lightgbm_estimator
-from lightgbm import LGBMClassifier
 import numba
 
 
