@@ -42,7 +42,8 @@ def get_lightgbm_estimator(pygbm_estimator):
         'min_data_in_bin': 1,
         'min_sum_hessian_in_leaf': 1e-3,
         'min_gain_to_split': 0,
-        'verbosity': 10 if pygbm_params['verbose'] else 0
+        'verbosity': 10 if pygbm_params['verbose'] else 0,
+        'boost_from_average': True,
     }
     # TODO: change hardcoded values when / if they're arguments to the
     # estimator.

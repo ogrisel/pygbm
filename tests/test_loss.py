@@ -2,6 +2,7 @@ import numpy as np
 from numpy.testing import assert_almost_equal
 from scipy.optimize import newton
 from scipy.special import logsumexp
+from sklearn.utils import assert_all_finite
 import pytest
 
 from pygbm.loss import _LOSSES
@@ -80,12 +81,12 @@ def test_derivatives(loss, x0, y_true):
     assert np.allclose(get_gradients(y_true, optimum), 0)
 
 
-@pytest.mark.parametrize('loss, n_classes, n_trees_per_iteration', [
+@pytest.mark.parametrize('loss, n_classes, prediction_dim', [
     ('least_squares', 0, 1),
     ('binary_crossentropy', 2, 1),
     ('categorical_crossentropy', 3, 3),
 ])
-def test_numerical_gradients(loss, n_classes, n_trees_per_iteration):
+def test_numerical_gradients(loss, n_classes, prediction_dim):
     # Make sure gradients and hessians computed in the loss are correct, by
     # comparing with their approximations computed with finite central
     # differences.
@@ -98,7 +99,7 @@ def test_numerical_gradients(loss, n_classes, n_trees_per_iteration):
     else:
         y_true = rng.randint(0, n_classes, size=n_samples).astype(np.float64)
     raw_predictions = rng.normal(
-        size=(n_samples, n_trees_per_iteration)
+        size=(n_samples, prediction_dim)
     ).astype(np.float64)
     loss = _LOSSES[loss]()
     get_gradients, get_hessians = get_derivatives_helper(loss)
@@ -154,3 +155,58 @@ def test_logsumexp():
     b = np.full(n, 10000, dtype='float64')
     desired = 10000.0 + np.log(n)
     assert_almost_equal(_logsumexp(b), desired)
+
+
+def test_baseline_least_squares():
+    rng = np.random.RandomState(0)
+
+    loss = _LOSSES['least_squares']()
+    y_train = rng.normal(size=100)
+    baseline_prediction = loss.get_baseline_prediction(y_train, 1)
+    assert baseline_prediction.shape == tuple()  # scalar
+    # Make sure baseline prediction is the mean of all targets
+    assert_almost_equal(baseline_prediction, y_train.mean())
+
+
+def test_baseline_binary_crossentropy():
+    rng = np.random.RandomState(0)
+
+    loss = _LOSSES['binary_crossentropy']()
+    for y_train in (np.zeros(shape=100), np.ones(shape=100)):
+        y_train = y_train.astype(np.float32)
+        baseline_prediction = loss.get_baseline_prediction(y_train, 1)
+        assert_all_finite(baseline_prediction)
+        assert_almost_equal(loss.inverse_link_function(baseline_prediction),
+                            y_train[0])
+
+    # Make sure baseline prediction is equal to link_function(p), where p
+    # is the proba of the positive class. We want predict_proba() to return p,
+    # and by definition
+    # p = inverse_link_function(raw_prediction) = sigmoid(raw_prediction)
+    # So we want raw_prediction = link_function(p) = log(p / (1 - p))
+    y_train = rng.randint(0, 2, size=100).astype(np.float32)
+    baseline_prediction = loss.get_baseline_prediction(y_train, 1)
+    assert baseline_prediction.shape == tuple()  # scalar
+    p = y_train.mean()
+    assert_almost_equal(baseline_prediction, np.log(p / (1 - p)))
+
+
+def test_baseline_categorical_crossentropy():
+    rng = np.random.RandomState(0)
+
+    prediction_dim = 4
+    loss = _LOSSES['categorical_crossentropy']()
+    for y_train in (np.zeros(shape=100), np.ones(shape=100)):
+        y_train = y_train.astype(np.float32)
+        baseline_prediction = loss.get_baseline_prediction(y_train,
+                                                           prediction_dim)
+        assert_all_finite(baseline_prediction)
+
+    # Same logic as for above test. Here inverse_link_function = softmax and
+    # link_function = log
+    y_train = rng.randint(0, prediction_dim + 1, size=100).astype(np.float32)
+    baseline_prediction = loss.get_baseline_prediction(y_train, prediction_dim)
+    assert baseline_prediction.shape == (1, prediction_dim)
+    for k in range(prediction_dim):
+        p = (y_train == k).mean()
+        assert_almost_equal(baseline_prediction[:, k], np.log(p))

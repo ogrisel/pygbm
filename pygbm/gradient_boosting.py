@@ -155,18 +155,23 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
             print("Fitting gradient boosted rounds:")
 
         n_samples = X_binned_train.shape[0]
-        # values predicted by the trees. Used as-is in regression, and
-        # transformed into probas and / or classes for classification
+        self.baseline_prediction_ = self.loss_.get_baseline_prediction(
+            y_train, self.n_trees_per_iteration_)
+        # raw_predictions are the accumulated values predicted by the trees
+        # for the training data.
         raw_predictions = np.zeros(
             shape=(n_samples, self.n_trees_per_iteration_),
-            dtype=y_train.dtype
+            dtype=self.baseline_prediction_.dtype
         )
+        raw_predictions += self.baseline_prediction_
+
         # gradients and hessians are 1D arrays of size
         # n_samples * n_trees_per_iteration
         gradients, hessians = self.loss_.init_gradients_and_hessians(
             n_samples=n_samples,
-            n_trees_per_iteration=self.n_trees_per_iteration_
+            prediction_dim=self.n_trees_per_iteration_
         )
+
         # predictors_ is a matrix of TreePredictor objects with shape
         # (n_iter_, n_trees_per_iteration)
         self.predictors_ = predictors = []
@@ -373,8 +378,9 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         n_samples = X.shape[0]
         raw_predictions = np.zeros(
             shape=(n_samples, self.n_trees_per_iteration_),
-            dtype=np.float32
+            dtype=self.baseline_prediction_.dtype
         )
+        raw_predictions += self.baseline_prediction_
         # Should we parallelize this?
         for predictors_of_ith_iteration in self.predictors_:
             for k, predictor in enumerate(predictors_of_ith_iteration):

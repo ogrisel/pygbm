@@ -39,7 +39,7 @@ def _expit(x):
 class BaseLoss(ABC):
     """Base class for a loss."""
 
-    def init_gradients_and_hessians(self, n_samples, n_trees_per_iteration):
+    def init_gradients_and_hessians(self, n_samples, prediction_dim):
         """Return initial gradients and hessians.
 
         Unless hessians are constant, arrays are initialized with undefined
@@ -49,19 +49,20 @@ class BaseLoss(ABC):
         ----------
         n_samples : int
             The number of samples passed to `fit()`
-        n_trees_per_iteration : int
-            The number of trees built at each iteration. Equals 1 for
-            regression and binary classification, or K where K is the number of
-            classes for multiclass classification.
+        prediction_dim : int
+            The dimension of a raw prediction, i.e. the number of trees
+            built at each iteration. Equals 1 for regression and binary
+            classification, or K where K is the number of classes for
+            multiclass classification.
 
         Returns
         -------
-        gradients : array-like, shape=(n_samples * n_trees_per_iteration)
-        hessians : array-like, shape=(n_samples * n_trees_per_iteration).
+        gradients : array-like, shape=(n_samples * prediction_dim)
+        hessians : array-like, shape=(n_samples * prediction_dim).
             If hessians are constant (e.g. for ``LeastSquares`` loss, shape
             is (1,) and the array is initialized to ``1``.
         """
-        shape = n_samples * n_trees_per_iteration
+        shape = n_samples * prediction_dim
         gradients = np.empty(shape=shape, dtype=np.float32)
         if self.hessian_is_constant:
             hessians = np.ones(shape=1, dtype=np.float32)
@@ -69,6 +70,25 @@ class BaseLoss(ABC):
             hessians = np.empty(shape=shape, dtype=np.float32)
 
         return gradients, hessians
+
+    @abstractmethod
+    def get_baseline_prediction(self, y_train, prediction_dim):
+        """Return initial predictions (before the first iteration).
+
+        Parameters
+        ----------
+        y_train : array-like, shape=(n_samples,)
+            The target training values.
+        prediction_dim : int
+            The dimension of one prediction: 1 for binary classification and
+            regression, n_classes for multiclass classification.
+
+        Returns
+        -------
+        baseline_prediction: float or array of shape (1, prediction_dim)
+            The baseline prediction.
+        """
+        pass
 
     @abstractmethod
     def update_gradients_and_hessians(self, gradients, hessians, y_true,
@@ -81,14 +101,14 @@ class BaseLoss(ABC):
 
         Parameters
         ----------
-        gradients : array-like, shape=(n_samples * n_trees_per_iteration)
+        gradients : array-like, shape=(n_samples * prediction_dim)
             The gradients (treated as OUT array).
-        hessians : array-like, shape=(n_samples * n_trees_per_iteration) or \
+        hessians : array-like, shape=(n_samples * prediction_dim) or \
             (1,)
             The hessians (treated as OUT array).
         y_true : array-like, shape=(n_samples,)
             The true target values or each training sample.
-        raw_predictions : array-like, shape=(n_samples, n_trees_per_iteration)
+        raw_predictions : array-like, shape=(n_samples, prediction_dim)
             The raw_predictions (i.e. values from the trees) of the tree
             ensemble at iteration ``i - 1``.
         """
@@ -111,6 +131,9 @@ class LeastSquares(BaseLoss):
         raw_predictions = raw_predictions.reshape(-1)
         loss = np.power(y_true - raw_predictions, 2)
         return loss.mean() if average else loss
+
+    def get_baseline_prediction(self, y_train, prediction_dim):
+        return np.mean(y_train)
 
     def inverse_link_function(self, raw_predictions):
         return raw_predictions
@@ -158,6 +181,14 @@ class BinaryCrossEntropy(BaseLoss):
         loss = np.logaddexp(0, raw_predictions) - y_true * raw_predictions
         return loss.mean() if average else loss
 
+    def get_baseline_prediction(self, y_train, prediction_dim):
+        proba_positive_class = np.mean(y_train)
+        eps = np.finfo(y_train.dtype).eps
+        proba_positive_class = np.clip(proba_positive_class, eps, 1 - eps)
+        # log(x / 1 - x) is the anti function of sigmoid, or the link function
+        # of the Binomial model.
+        return np.log(proba_positive_class / (1 - proba_positive_class))
+
     def update_gradients_and_hessians(self, gradients, hessians, y_true,
                                       raw_predictions):
         return _update_gradients_hessians_binary_crossentropy(
@@ -204,12 +235,25 @@ class CategoricalCrossEntropy(BaseLoss):
 
     def __call__(self, y_true, raw_predictions, average=True):
         one_hot_true = np.zeros_like(raw_predictions)
-        n_trees_per_iteration = raw_predictions.shape[1]
-        for k in range(n_trees_per_iteration):
+        prediction_dim = raw_predictions.shape[1]
+        for k in range(prediction_dim):
             one_hot_true[:, k] = (y_true == k)
 
         return (logsumexp(raw_predictions, axis=1) -
                 (one_hot_true * raw_predictions).sum(axis=1))
+
+    def get_baseline_prediction(self, y_train, prediction_dim):
+        init_value = np.zeros(
+            shape=(1, prediction_dim),
+            dtype=np.float32
+        )
+        eps = np.finfo(y_train.dtype).eps
+        for k in range(prediction_dim):
+            proba_kth_class = np.mean(y_train == k)
+            proba_kth_class = np.clip(proba_kth_class, eps, 1 - eps)
+            init_value[:, k] += np.log(proba_kth_class)
+
+        return init_value
 
     def update_gradients_and_hessians(self, gradients, hessians, y_true,
                                       raw_predictions):
@@ -227,7 +271,7 @@ class CategoricalCrossEntropy(BaseLoss):
 def _update_gradients_hessians_categorical_crossentropy(
         gradients, hessians, y_true, raw_predictions):
     # Here gradients and hessians are of shape
-    # (n_samples * n_trees_per_iteration,).
+    # (n_samples * prediction_dim,).
     # y_true is of shape (n_samples,).
     # raw_predictions is of shape (n_samples, raw_predictions)
     #
@@ -238,9 +282,9 @@ def _update_gradients_hessians_categorical_crossentropy(
     # That would however require to pass a copy of raw_predictions, so it does
     # not get partially overwritten at the end of the loop when
     # _update_y_pred() is called (see sklearn PR 12715)
-    n_samples, n_trees_per_iteration = raw_predictions.shape
+    n_samples, prediction_dim = raw_predictions.shape
     starts, ends, n_threads = get_threads_chunks(total_size=n_samples)
-    for k in range(n_trees_per_iteration):
+    for k in range(prediction_dim):
         gradients_at_k = gradients[n_samples * k:n_samples * (k + 1)]
         hessians_at_k = hessians[n_samples * k:n_samples * (k + 1)]
         for thread_idx in prange(n_threads):
