@@ -16,6 +16,12 @@ tools (grid search and randomized hyperparameter search).
 Longer term plans include integration with dask and dask-ml for
 out-of-core and distributed fitting on a cluster.
 
+## Installation
+
+The project is available on PyPI and can be installed with `pip`:
+
+    pip install pygbm
+
 ## Documentation
 
 The API documentation is available at:
@@ -38,6 +44,7 @@ Use pip to install in "editable" mode:
 
     git clone https://github.com/ogrisel/pygbm.git
     cd pygbm
+    pip install -r requirements.txt
     pip install --editable .
 
 Run the tests with pytest:
@@ -48,7 +55,9 @@ Run the tests with pytest:
 ## Benchmarking
 
 The `benchmarks` folder contains some scripts to evaluate the computation
-performance of various parts of pygbm.
+performance of various parts of pygbm. Keep in mind that numba's JIT
+compilation [takes
+time](http://numba.pydata.org/numba-doc/latest/user/5minguide.html#how-to-measure-the-performance-of-numba)!
 
 ### Profiling
 

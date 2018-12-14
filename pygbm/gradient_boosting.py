@@ -520,7 +520,7 @@ class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
         The loss function to use in the boosting process. 'binary_crossentropy'
         (also known as logistic loss) is used for binary classification and
         generalizes to 'categorical_crossentropy' for multiclass
-        classification. 'auto' will automatically choose eiher loss depending
+        classification. 'auto' will automatically choose either loss depending
         on the nature of the problem.
     learning_rate : float, optional(default=1)
         The learning rate, also known as *shrinkage*. This is used as a
