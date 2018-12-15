@@ -102,3 +102,6 @@ vs:
 
 The work from Nicolas Hug is supported by the National Science Foundation
 under Grant No. 1740305 and by DARPA under Grant No. DARPA-BAA-16-51
+
+The work from Olivier Grisel is supported by the [scikit-learn initiative
+and its partners at Inria Fondation](https://scikit-learn.fondation-inria.fr/en/)
