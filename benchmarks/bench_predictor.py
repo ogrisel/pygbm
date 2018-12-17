@@ -9,8 +9,8 @@ from pygbm import GradientBoostingRegressor
 n_samples = int(5e6)
 
 X, y = make_regression(n_samples=n_samples, n_features=5)
-est = GradientBoostingRegressor(max_iter=1, scoring=None,
-                                validation_split=None, random_state=0)
+est = GradientBoostingRegressor(max_iter=1, n_iter_no_change=None,
+                                random_state=0)
 est.fit(X, y)
 predictor = est.predictors_[0][0]
 

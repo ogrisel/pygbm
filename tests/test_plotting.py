@@ -49,7 +49,8 @@ def test_plot_estimator_and_lightgbm(tmpdir):
                                random_state=0)
 
     n_trees = 3
-    est_pygbm = GradientBoostingClassifier(max_iter=n_trees, scoring=None)
+    est_pygbm = GradientBoostingClassifier(max_iter=n_trees,
+                                           n_iter_no_change=None)
     est_pygbm.fit(X, y)
     est_lightgbm = lightgbm.LGBMClassifier(n_estimators=n_trees)
     est_lightgbm.fit(X, y)

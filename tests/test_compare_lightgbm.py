@@ -52,7 +52,7 @@ def test_same_predictions_regression(seed, min_samples_leaf, n_samples,
     est_pygbm = GradientBoostingRegressor(max_iter=max_iter,
                                           max_bins=max_bins,
                                           learning_rate=1,
-                                          validation_split=None, scoring=None,
+                                          n_iter_no_change=None,
                                           min_samples_leaf=min_samples_leaf,
                                           max_leaf_nodes=max_leaf_nodes)
     est_lightgbm = get_lightgbm_estimator(est_pygbm)
@@ -102,8 +102,7 @@ def test_same_predictions_classification(seed, min_samples_leaf, n_samples,
                                            max_iter=max_iter,
                                            max_bins=max_bins,
                                            learning_rate=1,
-                                           validation_split=None,
-                                           scoring=None,
+                                           n_iter_no_change=None,
                                            min_samples_leaf=min_samples_leaf,
                                            max_leaf_nodes=max_leaf_nodes)
     est_lightgbm = get_lightgbm_estimator(est_pygbm)
@@ -162,8 +161,7 @@ def test_same_predictions_multiclass_classification(
                                            max_iter=max_iter,
                                            max_bins=max_bins,
                                            learning_rate=lr,
-                                           validation_split=None,
-                                           scoring=None,
+                                           n_iter_no_change=None,
                                            min_samples_leaf=min_samples_leaf,
                                            max_leaf_nodes=max_leaf_nodes)
     est_lightgbm = get_lightgbm_estimator(est_pygbm)

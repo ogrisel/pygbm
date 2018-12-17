@@ -71,8 +71,8 @@ def test_init_parameters_validation(GradientBoosting, X, y):
 
     assert_raises_regex(
         ValueError,
-        f"n_iter_no_change=1 must not be smaller than 2",
-        GradientBoosting(n_iter_no_change=1).fit, X, y
+        f"n_iter_no_change=-1 must be positive",
+        GradientBoosting(n_iter_no_change=-1).fit, X, y
     )
 
     for validation_split in (-1, 0):
@@ -105,15 +105,17 @@ def test_one_sample_one_feature():
 @pytest.mark.skipif(
     int(os.environ.get("NUMBA_DISABLE_JIT", 0)) == 1,
     reason="Travis times out without numba")
-@pytest.mark.parametrize('scoring, validation_split, tol', [
-    ('neg_mean_squared_error', .1, 1e-7),
-    ('neg_mean_squared_error', None, 1e-1),  # need much higher tol on trainset
-    (None, None, None),  # no early stopping
+@pytest.mark.parametrize('scoring, validation_split, n_iter_no_change, tol', [
+    ('neg_mean_squared_error', .1, 5, 1e-7),  # use scorer
+    ('neg_mean_squared_error', None, 5, 1e-1),  # use scorer on training data
+    (None, .1, 5, 1e-7),  # use loss
+    (None, None, 5, 1e-1),  # use loss on training data
+    (None, None, None, None),  # no early stopping
 ])
-def test_early_stopping_regression(scoring, validation_split, tol):
+def test_early_stopping_regression(scoring, validation_split,
+                                   n_iter_no_change, tol):
 
     max_iter = 500
-    n_iter_no_change = 5
 
     X, y = make_regression(random_state=0)
 
@@ -126,7 +128,7 @@ def test_early_stopping_regression(scoring, validation_split, tol):
                                    random_state=0)
     gb.fit(X, y)
 
-    if scoring is not None:
+    if n_iter_no_change is not None:
         assert n_iter_no_change <= gb.n_iter_ < max_iter
     else:
         assert gb.n_iter_ == max_iter
@@ -139,15 +141,17 @@ def test_early_stopping_regression(scoring, validation_split, tol):
     make_classification(random_state=0),
     make_classification(n_classes=3, n_clusters_per_class=1, random_state=0)
 ))
-@pytest.mark.parametrize('scoring, validation_split, tol', [
-    ('accuracy', .1, 1e-7),
-    ('accuracy', None, 1e-7),
-    (None, None, None),  # no early stopping
+@pytest.mark.parametrize('scoring, validation_split, n_iter_no_change, tol', [
+    ('accuracy', .1, 5, 1e-7),  # use scorer
+    ('accuracy', None, 5, 1e-1),  # use scorer on training data
+    (None, .1, 5, 1e-7),  # use loss
+    (None, None, 5, 1e-1),  # use loss on training data
+    (None, None, None, None),  # no early stopping
 ])
-def test_early_stopping_classification(data, scoring, validation_split, tol):
+def test_early_stopping_classification(data, scoring, validation_split,
+                                       n_iter_no_change, tol):
 
     max_iter = 500
-    n_iter_no_change = 5
 
     X, y = data
 
@@ -160,10 +164,42 @@ def test_early_stopping_classification(data, scoring, validation_split, tol):
                                     random_state=0)
     gb.fit(X, y)
 
-    if scoring is not None:
+    if n_iter_no_change is not None:
         assert n_iter_no_change <= gb.n_iter_ < max_iter
     else:
         assert gb.n_iter_ == max_iter
+
+
+def test_early_stopping_loss():
+    # Make sure that when scoring is None, the early stopping is done w.r.t to
+    # the loss. Using scoring='neg_log_loss' and scoring=None should be
+    # equivalent since the loss is precisely the negative log likelihood
+    n_samples = int(1e3)
+    max_iter = 100
+    n_iter_no_change = 5
+
+    X, y = make_classification(n_samples, random_state=0)
+
+    clf_scoring = GradientBoostingClassifier(max_iter=max_iter,
+                                             scoring='neg_log_loss',
+                                             validation_split=.1,
+                                             n_iter_no_change=n_iter_no_change,
+                                             tol=1e-4,
+                                             verbose=1,
+                                             random_state=0)
+    clf_scoring.fit(X, y)
+
+    clf_loss = GradientBoostingClassifier(max_iter=max_iter,
+                                          scoring=None,
+                                          validation_split=.1,
+                                          n_iter_no_change=n_iter_no_change,
+                                          tol=1e-4,
+                                          verbose=1,
+                                          random_state=0)
+    clf_loss.fit(X, y)
+
+    assert n_iter_no_change < clf_loss.n_iter_ < max_iter
+    assert clf_loss.n_iter_ == clf_scoring.n_iter_
 
 
 def test_should_stop():
@@ -230,7 +266,7 @@ def custom_check_estimator(Estimator):
     reason="Potentially long")
 @pytest.mark.parametrize('Estimator', (
     GradientBoostingRegressor(),
-    GradientBoostingClassifier(scoring=None, min_samples_leaf=5),))
+    GradientBoostingClassifier(n_iter_no_change=None, min_samples_leaf=5),))
 def test_estimator_checks(Estimator):
     # Run the check_estimator() test suite on GBRegressor and GBClassifier.
 

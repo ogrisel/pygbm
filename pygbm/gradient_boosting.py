@@ -60,9 +60,9 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         if self.max_iter < 1:
             raise ValueError(f'max_iter={self.max_iter} must '
                              f'not be smaller than 1.')
-        if self.n_iter_no_change < 2:
+        if self.n_iter_no_change is not None and self.n_iter_no_change < 0:
             raise ValueError(f'n_iter_no_change={self.n_iter_no_change} '
-                             f'must not be smaller than 2.')
+                             f'must be positive.')
         if self.validation_split is not None and self.validation_split <= 0:
             raise ValueError(f'validation_split={self.validation_split} '
                              f'must be strictly positive, or None.')
@@ -120,7 +120,10 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
 
         self.loss_ = self._get_loss()
 
-        if self.scoring is not None and self.validation_split is not None:
+        do_early_stopping = (self.n_iter_no_change is not None and
+                             self.n_iter_no_change > 0)
+
+        if do_early_stopping and self.validation_split is not None:
             # stratify for classification
             stratify = y if hasattr(self.loss_, 'predict_proba') else None
 
@@ -143,7 +146,7 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
             X_binned_val, y_val = None, None
 
         # Subsample the training set for score-based monitoring.
-        if self.scoring is not None:
+        if do_early_stopping:
             subsample_size = 10000
             indices = np.arange(X_binned_train.shape[0])
             if X_binned_train.shape[0] > subsample_size:
@@ -182,15 +185,15 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         # est.predict() or est.predict_proba() depending on its nature.
         self.scorer_ = check_scoring(self, self.scoring)
         self.train_scores_ = []
-        if self.scoring is not None:
+        self.validation_scores_ = []
+        if do_early_stopping:
             # Add predictions of the initial model (before the first tree)
             self.train_scores_.append(
-                self.scorer_(self, X_binned_train, y_train))
+                self._get_scores(X_binned_train, y_train))
 
             if self.validation_split is not None:
-                self.validation_scores_ = []
                 self.validation_scores_.append(
-                    self.scorer_(self, X_binned_val, y_val))
+                    self._get_scores(X_binned_val, y_val))
 
         for iteration in range(self.max_iter):
 
@@ -242,15 +245,17 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
                 toc_pred = time()
                 acc_prediction_time += toc_pred - tic_pred
 
-            if self.scoring is not None:
+            should_early_stop = False
+            if do_early_stopping:
                 should_early_stop = self._check_early_stopping(
                     X_binned_small_train, y_small_train,
                     X_binned_val, y_val)
 
             if self.verbose:
-                self._print_iteration_stats(iteration_start_time)
+                self._print_iteration_stats(iteration_start_time,
+                                            do_early_stopping)
 
-            if self.scoring is not None and should_early_stop:
+            if should_early_stop:
                 break
 
         if self.verbose:
@@ -272,8 +277,7 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
                   f"{acc_prediction_time:.3f}s")
 
         self.train_scores_ = np.asarray(self.train_scores_)
-        if self.scoring is not None and self.validation_split is not None:
-            self.validation_scores_ = np.asarray(self.validation_scores_)
+        self.validation_scores_ = np.asarray(self.validation_scores_)
         return self
 
     def _check_early_stopping(self, X_binned_train, y_train,
@@ -283,11 +287,12 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         Scores are computed on validation data or on training data.
         """
 
-        self.train_scores_.append(self.scorer_(self, X_binned_train, y_train))
+        self.train_scores_.append(
+            self._get_scores(X_binned_train, y_train))
 
         if self.validation_split is not None:
             self.validation_scores_.append(
-                self.scorer_(self, X_binned_val, y_val))
+                self._get_scores(X_binned_val, y_val))
             return self._should_stop(self.validation_scores_)
 
         return self._should_stop(self.train_scores_)
@@ -312,7 +317,21 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
                                for score in recent_scores]
         return not any(recent_improvements)
 
-    def _print_iteration_stats(self, iteration_start_time):
+    def _get_scores(self, X, y):
+        """Compute scores on data X with target y.
+
+        Scores are either computed with a scorer if scoring parameter is not
+        None, else with the loss. As higher is always better, we return
+        -loss_value.
+        """
+        if self.scoring is not None:
+            return self.scorer_(self, X, y)
+
+        # Else, use the negative loss as score.
+        raw_predictions = self._raw_predict(X)
+        return -self.loss_(y, raw_predictions)
+
+    def _print_iteration_stats(self, iteration_start_time, do_early_stopping):
         """Print info about the current fitting iteration."""
         log_msg = ''
 
@@ -334,7 +353,7 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
 
         log_msg += f"max depth = {max_depth}, "
 
-        if self.scoring is not None:
+        if do_early_stopping:
             log_msg += f"{self.scoring} train: {self.train_scores_[-1]:.5f}, "
             if self.validation_split is not None:
                 log_msg += (f"{self.scoring} val: "
@@ -427,18 +446,19 @@ class GradientBoostingRegressor(BaseGradientBoostingMachine, RegressorMixin):
         number of unique values may use less than ``max_bins`` bins. Must be no
         larger than 256.
     scoring : str or callable or None, \
-        optional (default='neg_mean_squared_error')
+        optional (default=None)
         Scoring parameter to use for early stopping (see sklearn.metrics for
-        available options). If None, no early stopping is done.
+        available options). If None, early stopping is check w.r.t the loss
+        value.
     validation_split : int or float or None, optional(default=0.1)
         Proportion (or absolute size) of training data to set aside as
         validation data for early stopping. If None, early stopping is done on
-        the whole training data.
-    n_iter_no_change : int, optional (default=5)
+        the training data.
+    n_iter_no_change : int or None, optional (default=5)
         Used to determine when to "early stop". The fitting process is
         stopped when none of the last ``n_iter_no_change`` scores are better
         than the ``n_iter_no_change - 1``th-to-last one, up to some
-        tolerance.
+        tolerance. If None or 0, no early-stopping is done.
     tol : float or None optional (default=1e-7)
         The absolute tolerance to use when comparing scores. The higher the
         tolerance, the more likely we are to early stop: higher tolerance
@@ -468,11 +488,11 @@ class GradientBoostingRegressor(BaseGradientBoostingMachine, RegressorMixin):
 
     _VALID_LOSSES = ('least_squares',)
 
-    def __init__(self, loss='least_squares', learning_rate=0.1, max_iter=100,
-                 max_leaf_nodes=31, max_depth=None, min_samples_leaf=20,
-                 l2_regularization=0., max_bins=256,
-                 scoring='neg_mean_squared_error', validation_split=0.1,
-                 n_iter_no_change=5, tol=1e-7, verbose=0, random_state=None):
+    def __init__(self, loss='least_squares', learning_rate=0.1,
+                 max_iter=100, max_leaf_nodes=31, max_depth=None,
+                 min_samples_leaf=20, l2_regularization=0., max_bins=256,
+                 scoring=None, validation_split=0.1, n_iter_no_change=5,
+                 tol=1e-7, verbose=0, random_state=None):
         super(GradientBoostingRegressor, self).__init__(
             loss=loss, learning_rate=learning_rate, max_iter=max_iter,
             max_leaf_nodes=max_leaf_nodes, max_depth=max_depth,
@@ -546,18 +566,19 @@ class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
         allows for a much faster training stage. Features with a small
         number of unique values may use less than ``max_bins`` bins. Must be no
         larger than 256.
-    scoring : str or callable or None, optional (default='accuracy')
+    scoring : str or callable or None, optional (default=None)
         Scoring parameter to use for early stopping (see sklearn.metrics for
-        available options). If None, no early stopping is done.
+        available options). If None, early stopping is check w.r.t the loss
+        value.
     validation_split : int or float or None, optional(default=0.1)
         Proportion (or absolute size) of training data to set aside as
         validation data for early stopping. If None, early stopping is done on
-        the whole training data.
-    n_iter_no_change : int, optional (default=5)
+        the training data.
+    n_iter_no_change : int or None, optional (default=5)
         Used to determine when to "early stop". The fitting process is
         stopped when none of the last ``n_iter_no_change`` scores are better
         than the ``n_iter_no_change - 1``th-to-last one, up to some
-        tolerance.
+        tolerance. If None or 0, no early-stopping is done.
     tol : float or None optional (default=1e-7)
         The absolute tolerance to use when comparing scores. The higher the
         tolerance, the more likely we are to early stop: higher tolerance
@@ -588,7 +609,7 @@ class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
 
     def __init__(self, loss='auto', learning_rate=0.1, max_iter=100,
                  max_leaf_nodes=31, max_depth=None, min_samples_leaf=20,
-                 l2_regularization=0., max_bins=256, scoring='neg_log_loss',
+                 l2_regularization=0., max_bins=256, scoring=None,
                  validation_split=0.1, n_iter_no_change=5, tol=1e-7,
                  verbose=0, random_state=None):
         super(GradientBoostingClassifier, self).__init__(

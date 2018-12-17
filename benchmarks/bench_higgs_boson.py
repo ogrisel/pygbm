@@ -69,8 +69,9 @@ tic = time()
 pygbm_model = GradientBoostingClassifier(learning_rate=lr, max_iter=1,
                                          max_bins=max_bins,
                                          max_leaf_nodes=n_leaf_nodes,
-                                         random_state=0, scoring=None,
-                                         verbose=0, validation_split=None)
+                                         n_iter_no_change=None,
+                                         random_state=0,
+                                         verbose=0)
 pygbm_model.fit(data_train[:100], target_train[:100])
 pygbm_model.predict(data_train[:100])  # prediction code is also jitted
 toc = time()
@@ -82,8 +83,9 @@ pygbm_model = GradientBoostingClassifier(loss='binary_crossentropy',
                                          learning_rate=lr, max_iter=n_trees,
                                          max_bins=max_bins,
                                          max_leaf_nodes=n_leaf_nodes,
-                                         random_state=0, scoring=None,
-                                         verbose=1, validation_split=None)
+                                         n_iter_no_change=None,
+                                         random_state=0,
+                                         verbose=1)
 pygbm_model.fit(data_train, target_train)
 toc = time()
 predicted_test = pygbm_model.predict(data_test)

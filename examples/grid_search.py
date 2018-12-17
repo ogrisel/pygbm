@@ -16,7 +16,7 @@ X, y = make_regression(n_samples, random_state=rng)
 X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=rng)
 
 clf = GradientBoostingRegressor(max_iter=10,
-                                scoring=None,
+                                n_iter_no_change=None,
                                 verbose=1,
                                 random_state=rng)
 param_grid = {'learning_rate': [1, .1, .01, .001]}

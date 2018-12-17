@@ -21,7 +21,7 @@ def get_lightgbm_estimator(pygbm_estimator):
     if pygbm_params['loss'] == 'auto':
         raise ValueError('auto loss is not accepted. We need to know if '
                          'the problem is binary or multiclass classification.')
-    if pygbm_params['scoring'] is not None:
+    if pygbm_params['n_iter_no_change'] is not None:
         raise NotImplementedError('Early stopping should be deactivated.')
 
     loss_mapping = {

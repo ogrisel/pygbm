@@ -239,8 +239,9 @@ class CategoricalCrossEntropy(BaseLoss):
         for k in range(prediction_dim):
             one_hot_true[:, k] = (y_true == k)
 
-        return (logsumexp(raw_predictions, axis=1) -
+        loss = (logsumexp(raw_predictions, axis=1) -
                 (one_hot_true * raw_predictions).sum(axis=1))
+        return loss.mean() if average else loss
 
     def get_baseline_prediction(self, y_train, prediction_dim):
         init_value = np.zeros(
