@@ -169,11 +169,14 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         # Subsample the training set for score-based monitoring.
         if do_early_stopping:
             subsample_size = 10000
-            indices = np.arange(X_binned_train.shape[0])
-            if X_binned_train.shape[0] > subsample_size:
-                indices = rng.choice(indices, subsample_size)
-            X_binned_small_train = X_binned_train[indices]
-            y_small_train = y_train[indices]
+            n_samples_train = X_binned_train.shape[0]
+            if n_samples_train > subsample_size:
+                indices = rng.choice(X_binned_train.shape[0], subsample_size)
+                X_binned_small_train = X_binned_train[indices]
+                y_small_train = y_train[indices]
+            else:
+                X_binned_small_train = X_binned_train
+                y_small_train = y_train
             # Predicting is faster of C-contiguous arrays.
             X_binned_small_train = np.ascontiguousarray(X_binned_small_train)
 
