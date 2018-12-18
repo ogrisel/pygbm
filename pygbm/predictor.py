@@ -28,8 +28,9 @@ class TreePredictor:
     nodes : list of PREDICTOR_RECORD_DTYPE.
         The nodes of the tree.
     """
-    def __init__(self, nodes):
+    def __init__(self, nodes, has_numerical_thresholds=True):
         self.nodes = nodes
+        self.has_numerical_thresholds = has_numerical_thresholds
 
     def get_n_leaf_nodes(self):
         """Return number of leaves."""
@@ -54,6 +55,10 @@ class TreePredictor:
         y : array, shape (n_samples,)
             The raw predicted values.
         """
+
+        if binned_data.dtype != np.uint8:
+            raise ValueError('binned_data dtype should be uint8')
+
         if out is None:
             out = np.empty(binned_data.shape[0], dtype=np.float32)
         _predict_binned(self.nodes, binned_data, out)
@@ -74,6 +79,20 @@ class TreePredictor:
         """
         # TODO: introspect X to dispatch to numerical or categorical data
         # (dense or sparse) on a feature by feature basis.
+
+        if not self.has_numerical_thresholds:
+            raise ValueError(
+                'This predictor does not have numerical thresholds so it can'
+                'only predict pre-binned data.'
+            )
+
+        if X.dtype == np.uint8:
+            raise ValueError(
+                'X has uint8 dtype: use estimator.predict(X) if X is '
+                'pre-binned, or convert X to a float32 dtype to be treated '
+                'as numerical data'
+            )
+
         out = np.empty(X.shape[0], dtype=np.float32)
         _predict_from_numeric_data(self.nodes, X, out)
         return out

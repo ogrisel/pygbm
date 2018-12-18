@@ -42,7 +42,7 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         self.verbose = verbose
         self.random_state = random_state
 
-    def _validate_parameters(self):
+    def _validate_parameters(self, X):
         """Validate parameters passed to __init__.
 
         The parameters that are directly passed to the grower are checked in
@@ -69,6 +69,13 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         if self.tol is not None and self.tol < 0:
             raise ValueError(f'tol={self.tol} '
                              f'must not be smaller than 0.')
+        if X.dtype == np.uint8:  # pre-binned data
+            max_bin_index = X.max()
+            if self.max_bins < max_bin_index + 1:
+                raise ValueError(
+                    f'max_bins is set to {self.max_bins} but the data is '
+                    f'pre-binned with {max_bin_index + 1} bins.'
+                )
 
     def fit(self, X, y):
         """Fit the gradient boosting model.
@@ -76,7 +83,10 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         Parameters
         ----------
         X : array-like, shape=(n_samples, n_features)
-            The input samples.
+            The input samples. If ``X.dtype == np.uint8``, the data is
+            assumed to be pre-binned and the prediction methods
+            (``predict``, ``predict_proba``) will only accept pre-binned
+            data as well.
 
         y : array-like, shape=(n_samples,)
             Target values.
@@ -93,8 +103,7 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         acc_prediction_time = 0.
         # TODO: add support for mixed-typed (numerical + categorical) data
         # TODO: add support for missing data
-        # TODO: add support for pre-binned data (pass-through)?
-        X, y = check_X_y(X, y, dtype=[np.float32, np.float64])
+        X, y = check_X_y(X, y, dtype=[np.float32, np.float64, np.uint8])
         y = self._encode_y(y)
         if X.shape[0] == 1 or X.shape[1] == 1:
             raise ValueError(
@@ -103,20 +112,32 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
             )
         rng = check_random_state(self.random_state)
 
-        self._validate_parameters()
+        self._validate_parameters(X)
         self.n_features_ = X.shape[1]  # used for validation in predict()
 
-        if self.verbose:
-            print(f"Binning {X.nbytes / 1e9:.3f} GB of data: ", end="",
-                  flush=True)
-        tic = time()
-        self.bin_mapper_ = BinMapper(max_bins=self.max_bins, random_state=rng)
-        X_binned = self.bin_mapper_.fit_transform(X)
-        toc = time()
-        if self.verbose:
-            duration = toc - tic
-            troughput = X.nbytes / duration
-            print(f"{duration:.3f} s ({troughput / 1e6:.3f} MB/s)")
+        if X.dtype == np.uint8:  # data is pre-binned
+            if self.verbose:
+                print("X is pre-binned.")
+            X_binned = X
+            self.bin_mapper_ = None
+            numerical_thresholds = None
+            n_bins_per_feature = X.max(axis=0).astype(np.uint32)
+        else:
+            if self.verbose:
+                print(f"Binning {X.nbytes / 1e9:.3f} GB of data: ", end="",
+                      flush=True)
+            tic = time()
+            self.bin_mapper_ = BinMapper(max_bins=self.max_bins,
+                                         random_state=rng)
+            X_binned = self.bin_mapper_.fit_transform(X)
+            numerical_thresholds = self.bin_mapper_.numerical_thresholds_
+            n_bins_per_feature = self.bin_mapper_.n_bins_per_feature_
+            toc = time()
+
+            if self.verbose:
+                duration = toc - tic
+                throughput = X.nbytes / duration
+                print(f"{duration:.3f} s ({throughput / 1e6:.3f} MB/s)")
 
         self.loss_ = self._get_loss()
 
@@ -220,7 +241,7 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
                 grower = TreeGrower(
                     X_binned_train, gradients_at_k, hessians_at_k,
                     max_bins=self.max_bins,
-                    n_bins_per_feature=self.bin_mapper_.n_bins_per_feature_,
+                    n_bins_per_feature=n_bins_per_feature,
                     max_leaf_nodes=self.max_leaf_nodes,
                     max_depth=self.max_depth,
                     min_samples_leaf=self.min_samples_leaf,
@@ -231,8 +252,7 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
                 acc_apply_split_time += grower.total_apply_split_time
                 acc_find_split_time += grower.total_find_split_time
 
-                predictor = grower.make_predictor(
-                    bin_thresholds=self.bin_mapper_.bin_thresholds_)
+                predictor = grower.make_predictor(numerical_thresholds)
                 predictors[-1].append(predictor)
 
                 tic_pred = time()
@@ -371,7 +391,8 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         ----------
         X : array-like, shape=(n_samples, n_features)
             The input samples. If ``X.dtype == np.uint8``, the data is assumed
-            to be pre-binned.
+            to be pre-binned and the estimator must have been fitted with
+            pre-binned data.
 
         Returns
         -------
@@ -385,6 +406,15 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
                 f'X has {X.shape[1]} features but this estimator was '
                 f'trained with {self.n_features_} features.'
             )
+        is_binned = X.dtype == np.uint8
+        if not is_binned and self.bin_mapper_ is None:
+            raise ValueError(
+                'This estimator was fitted with pre-binned data and '
+                'can only predict pre-binned data as well. If your data *is* '
+                'already pre-binnned, convert it to uint8 using e.g. '
+                'X.astype(np.uint8). If the data passed to fit() was *not* '
+                'pre-binned, convert it to float32 and call fit() again.'
+            )
         n_samples = X.shape[0]
         raw_predictions = np.zeros(
             shape=(n_samples, self.n_trees_per_iteration_),
@@ -392,7 +422,6 @@ class BaseGradientBoostingMachine(BaseEstimator, ABC):
         )
         raw_predictions += self.baseline_prediction_
         # Should we parallelize this?
-        is_binned = X.dtype == np.uint8
         for predictors_of_ith_iteration in self.predictors_:
             for k, predictor in enumerate(predictors_of_ith_iteration):
                 predict = (predictor.predict_binned if is_binned
@@ -509,7 +538,8 @@ class GradientBoostingRegressor(BaseGradientBoostingMachine, RegressorMixin):
         ----------
         X : array-like, shape=(n_samples, n_features)
             The input samples. If ``X.dtype == np.uint8``, the data is assumed
-            to be pre-binned.
+            to be pre-binned and the estimator must have been fitted with
+            pre-binned data.
 
         Returns
         -------
@@ -628,7 +658,8 @@ class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
         ----------
         X : array-like, shape=(n_samples, n_features)
             The input samples. If ``X.dtype == np.uint8``, the data is assumed
-            to be pre-binned.
+            to be pre-binned and the estimator must have been fitted with
+            pre-binned data.
 
         Returns
         -------
@@ -646,7 +677,8 @@ class GradientBoostingClassifier(BaseGradientBoostingMachine, ClassifierMixin):
         ----------
         X : array-like, shape=(n_samples, n_features)
             The input samples. If ``X.dtype == np.uint8``, the data is assumed
-            to be pre-binned.
+            to be pre-binned and the estimator must have been fitted with
+            pre-binned data.
 
         Returns
         -------

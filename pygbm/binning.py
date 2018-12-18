@@ -14,7 +14,6 @@ def _find_binning_thresholds(data, max_bins=256, subsample=int(2e5),
                              random_state=None):
     """Extract feature-wise equally-spaced quantiles from numerical data
 
-
     Return
     ------
     binning_thresholds: tuple of arrays
@@ -152,13 +151,15 @@ class BinMapper(BaseEstimator, TransformerMixin):
         self : object
         """
         X = check_array(X)
-        self.bin_thresholds_ = _find_binning_thresholds(
+        self.numerical_thresholds_ = _find_binning_thresholds(
             X, self.max_bins, subsample=self.subsample,
             random_state=self.random_state)
 
         self.n_bins_per_feature_ = np.array(
-            [thresholds.shape[0] + 1 for thresholds in self.bin_thresholds_],
-            dtype=np.uint32)
+            [thresholds.shape[0] + 1
+             for thresholds in self.numerical_thresholds_],
+            dtype=np.uint32
+        )
 
         return self
 
@@ -175,4 +176,4 @@ class BinMapper(BaseEstimator, TransformerMixin):
         X_binned : array-like
             The binned data
         """
-        return _map_to_bins(X, binning_thresholds=self.bin_thresholds_)
+        return _map_to_bins(X, binning_thresholds=self.numerical_thresholds_)

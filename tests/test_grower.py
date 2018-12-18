@@ -215,7 +215,8 @@ def test_min_samples_leaf(n_samples, min_samples_leaf, n_bins,
                         min_samples_leaf=min_samples_leaf,
                         max_leaf_nodes=n_samples)
     grower.grow()
-    predictor = grower.make_predictor(bin_thresholds=mapper.bin_thresholds_)
+    predictor = grower.make_predictor(
+        numerical_thresholds=mapper.numerical_thresholds_)
 
     if n_samples >= min_samples_leaf:
         for node in predictor.nodes:

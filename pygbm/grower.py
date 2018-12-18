@@ -413,25 +413,30 @@ class TreeGrower:
             node = self.splittable_nodes.pop()
             self._finalize_leaf(node)
 
-    def make_predictor(self, bin_thresholds=None):
+    def make_predictor(self, numerical_thresholds=None):
         """Make a TreePredictor object out of the current tree.
 
         Parameters
         ----------
-        bin_thresholds : array-like of floats, optional (default=None)
-            The actual thresholds values of each bin.
+        numerical_thresholds : array-like of floats, optional (default=None)
+            The actual thresholds values of each bin, expected to be in sorted
+            increasing order. None if the training data was pre-binned.
 
         Returns
         -------
         A TreePredictor object.
         """
         predictor_nodes = np.zeros(self.n_nodes, dtype=PREDICTOR_RECORD_DTYPE)
-        self._fill_predictor_node_array(predictor_nodes, self.root,
-                                        bin_thresholds=bin_thresholds)
-        return TreePredictor(predictor_nodes)
+        self._fill_predictor_node_array(
+            predictor_nodes, self.root,
+            numerical_thresholds=numerical_thresholds
+        )
+        has_numerical_thresholds = numerical_thresholds is not None
+        return TreePredictor(nodes=predictor_nodes,
+                             has_numerical_thresholds=has_numerical_thresholds)
 
     def _fill_predictor_node_array(self, predictor_nodes, grower_node,
-                                   bin_thresholds=None, next_free_idx=0):
+                                   numerical_thresholds=None, next_free_idx=0):
         """Helper used in make_predictor to set the TreePredictor fields."""
         node = predictor_nodes[next_free_idx]
         node['count'] = grower_node.n_samples
@@ -452,17 +457,18 @@ class TreeGrower:
             feature_idx, bin_idx = split_info.feature_idx, split_info.bin_idx
             node['feature_idx'] = feature_idx
             node['bin_threshold'] = bin_idx
-            if bin_thresholds is not None:
-                threshold = bin_thresholds[feature_idx][bin_idx]
-                node['threshold'] = threshold
+            if numerical_thresholds is not None:
+                node['threshold'] = numerical_thresholds[feature_idx][bin_idx]
             next_free_idx += 1
 
             node['left'] = next_free_idx
             next_free_idx = self._fill_predictor_node_array(
                 predictor_nodes, grower_node.left_child,
-                bin_thresholds=bin_thresholds, next_free_idx=next_free_idx)
+                numerical_thresholds=numerical_thresholds,
+                next_free_idx=next_free_idx)
 
             node['right'] = next_free_idx
             return self._fill_predictor_node_array(
                 predictor_nodes, grower_node.right_child,
-                bin_thresholds=bin_thresholds, next_free_idx=next_free_idx)
+                numerical_thresholds=numerical_thresholds,
+                next_free_idx=next_free_idx)

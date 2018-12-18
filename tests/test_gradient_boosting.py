@@ -1,12 +1,15 @@
 import os
 import warnings
 
+import numpy as np
+from numpy.testing import assert_allclose
 import pytest
 from sklearn.utils.testing import assert_raises_regex
 from sklearn.datasets import make_classification, make_regression
 
 from pygbm import GradientBoostingClassifier
 from pygbm import GradientBoostingRegressor
+from pygbm.binning import BinMapper
 
 
 X_classification, y_classification = make_classification(random_state=0)
@@ -68,6 +71,12 @@ def test_init_parameters_validation(GradientBoosting, X, y):
             f"max_bins={max_bins} should be no smaller than 2 and no larger",
             GradientBoosting(max_bins=max_bins).fit, X, y
         )
+
+    assert_raises_regex(
+        ValueError,
+        f"max_bins is set to 4 but the data is pre-binned with 256 bins",
+        GradientBoosting(max_bins=4).fit, X.astype(np.uint8), y
+    )
 
     assert_raises_regex(
         ValueError,
@@ -279,3 +288,31 @@ def test_estimator_checks(Estimator):
     #   dataset, the root is never split with min_samples_leaf=20 and only the
     #   majority class is predicted.
     custom_check_estimator(Estimator)
+
+
+def test_pre_binned_data():
+    # Make sure that:
+    # - training on numerical data and predicting on numerical data is the
+    #   same as training on binned data and predicting on binned data
+    # - training on numerical data and predicting on numerical data is the
+    #   same as training on numerical data and predicting on binned data
+    # - training on binned data and predicting on numerical data is not
+    #   possible.
+
+    X, y = make_regression(random_state=0)
+    gbdt = GradientBoostingRegressor(scoring=None, random_state=0)
+    mapper = BinMapper(random_state=0)
+    X_binned = mapper.fit_transform(X)
+
+    fit_num_pred_num = gbdt.fit(X, y).predict(X)
+    fit_binned_pred_binned = gbdt.fit(X_binned, y).predict(X_binned)
+    fit_num_pred_binned = gbdt.fit(X, y).predict(X_binned)
+
+    assert_allclose(fit_num_pred_num, fit_binned_pred_binned)
+    assert_allclose(fit_num_pred_num, fit_num_pred_binned)
+
+    assert_raises_regex(
+        ValueError,
+        'This estimator was fitted with pre-binned data ',
+        gbdt.fit(X_binned, y).predict, X
+    )

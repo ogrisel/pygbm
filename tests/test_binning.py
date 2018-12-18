@@ -95,10 +95,10 @@ def test_bin_mapper_random_data(n_bins):
     assert binned.dtype == np.uint8
     assert_array_equal(binned.min(axis=0), np.array([0, 0]))
     assert_array_equal(binned.max(axis=0), np.array([n_bins - 1, n_bins - 1]))
-    assert len(mapper.bin_thresholds_) == n_features
-    for i in range(len(mapper.bin_thresholds_)):
-        assert mapper.bin_thresholds_[i].shape == (n_bins - 1,)
-        assert mapper.bin_thresholds_[i].dtype == DATA.dtype
+    assert len(mapper.numerical_thresholds_) == n_features
+    for i in range(len(mapper.numerical_thresholds_)):
+        assert mapper.numerical_thresholds_[i].shape == (n_bins - 1,)
+        assert mapper.numerical_thresholds_[i].dtype == DATA.dtype
     assert np.all(mapper.n_bins_per_feature_ == n_bins)
 
     # Check that the binned data is approximately balanced across bins.
@@ -159,7 +159,8 @@ def test_bin_mapper_repeated_values_invariance(n_distinct):
     mapper_2 = BinMapper(max_bins=min(256, n_distinct * 3))
     binned_2 = mapper_2.fit_transform(data)
 
-    assert_allclose(mapper_1.bin_thresholds_[0], mapper_2.bin_thresholds_[0])
+    assert_allclose(mapper_1.numerical_thresholds_[0],
+                    mapper_2.numerical_thresholds_[0])
     assert_array_equal(binned_1, binned_2)
 
 
@@ -214,7 +215,7 @@ def test_subsample():
     for feature in range(DATA.shape[1]):
         with pytest.raises(AssertionError):
             np.testing.assert_array_almost_equal(
-                mapper_no_subsample.bin_thresholds_[feature],
-                mapper_subsample.bin_thresholds_[feature],
+                mapper_no_subsample.numerical_thresholds_[feature],
+                mapper_subsample.numerical_thresholds_[feature],
                 decimal=3
             )
