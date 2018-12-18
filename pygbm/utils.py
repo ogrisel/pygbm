@@ -3,6 +3,8 @@ import numpy as np
 from numba import njit
 from numba import config as numba_config
 
+from .binning import BinMapper
+
 
 def get_lightgbm_estimator(pygbm_estimator):
     """Return an unfitted LightGBM estimator with matching hyperparams.
@@ -44,6 +46,9 @@ def get_lightgbm_estimator(pygbm_estimator):
         'min_gain_to_split': 0,
         'verbosity': 10 if pygbm_params['verbose'] else 0,
         'boost_from_average': True,
+        'enable_bundle': False,  # also makes feature order consistent
+        'min_data_in_bin': 1,
+        'bin_construct_sample_cnt': BinMapper().subsample,
     }
     # TODO: change hardcoded values when / if they're arguments to the
     # estimator.
